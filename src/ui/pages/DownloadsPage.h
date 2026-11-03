@@ -36,6 +36,9 @@ private:
     void pauseSelected();
     void resumeSelected();
     void deleteSelected();
+    void updateActions();
+    void showContextMenu(const QPoint &position);
+    void openExternalClient();
     QString selectedHash() const;
 
     LocalLibrary *m_library;
@@ -46,6 +49,7 @@ private:
     QTableWidget *m_table;
     QLabel *m_status;
     QTimer *m_timer;
+    QLabel *m_summary;
     QLabel *m_taskCount;
     QLabel *m_downSpeed;
     QLabel *m_upSpeed;

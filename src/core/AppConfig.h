@@ -18,7 +18,8 @@ struct AppConfig {
     PathConfig paths;
     EngineSettings engine;
     DownloaderSettings downloader;
-    QString theme = QStringLiteral("dark");
+    QString theme = QStringLiteral("dark");     // legacy key, kept for older builds
+    QString appearance = QStringLiteral("system"); // system | light | dark
     QString language = QStringLiteral("zh-CN");
     bool hasSavedDownloadDirectory = false;
 

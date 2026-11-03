@@ -20,7 +20,7 @@
 
 namespace {
 // Draw caption glyphs ourselves so they remain crisp at any display scale.
-QIcon captionIcon(int kind, const QColor &color)
+QPixmap captionGlyph(int kind, const QColor &color)
 {
     const qreal dpr = qApp->devicePixelRatio();
     QPixmap pixmap(QSize(16, 16) * dpr);
@@ -33,14 +33,24 @@ QIcon captionIcon(int kind, const QColor &color)
     if (kind == 1) painter.drawRect(QRectF(3.5, 3.5, 9, 9));
     if (kind == 2) {
         painter.drawRect(QRectF(5.5, 2.5, 7, 7));
-        painter.fillRect(QRectF(2.5, 5.5, 7, 7), QColor(Theme::SURFACE));
+        painter.fillRect(QRectF(2.5, 5.5, 7, 7), QColor(Theme::c().chrome));
         painter.drawRect(QRectF(2.5, 5.5, 7, 7));
     }
     if (kind == 3) {
         painter.drawLine(QPointF(4, 4), QPointF(12, 12));
         painter.drawLine(QPointF(12, 4), QPointF(4, 12));
     }
-    return QIcon(pixmap);
+    return pixmap;
+}
+
+// The close glyph turns white on its red hover fill; QToolButton uses the Active
+// icon mode for hovered auto-raise buttons.
+QIcon captionIcon(int kind)
+{
+    QIcon icon(captionGlyph(kind, QColor(Theme::c().text2)));
+    if (kind == 3)
+        icon.addPixmap(captionGlyph(kind, Qt::white), QIcon::Active);
+    return icon;
 }
 }
 
@@ -50,21 +60,25 @@ FramelessWindow::FramelessWindow(QWidget *parent) : QMainWindow(parent)
                    | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
     m_titleBar = new QWidget(this);
     m_titleBar->setObjectName("TitleBar");
-    m_titleBar->setFixedHeight(48);
+    m_titleBar->setAttribute(Qt::WA_StyledBackground, true);
+    m_titleBar->setFixedHeight(44);
     auto *row = new QHBoxLayout(m_titleBar);
-    row->setContentsMargins(18, 0, 0, 0);
-    row->setSpacing(12);
+    row->setContentsMargins(16, 0, 0, 0);
+    row->setSpacing(0);
     auto *mark = new QLabel(QStringLiteral("N"), m_titleBar);
     mark->setObjectName("AppMark");
     mark->setAlignment(Qt::AlignCenter);
-    mark->setFixedSize(28, 28);
-    auto *name = new QLabel(QStringLiteral("ANIME NEXUS"), m_titleBar);
+    mark->setFixedSize(24, 24);
+    auto *name = new QLabel(QStringLiteral("Anime Nexus"), m_titleBar);
     name->setObjectName("TitleBrand");
     row->addWidget(mark);
+    row->addSpacing(10);
     row->addWidget(name);
+    row->addSpacing(10);
     auto *separator = new QLabel(QStringLiteral("/"), m_titleBar);
-    separator->setObjectName("Faint");
+    separator->setObjectName("TitleSeparator");
     row->addWidget(separator);
+    row->addSpacing(10);
     m_context = new QLabel(QStringLiteral("本季放送"), m_titleBar);
     m_context->setObjectName("TitleContext");
     row->addWidget(m_context);
@@ -75,18 +89,22 @@ FramelessWindow::FramelessWindow(QWidget *parent) : QMainWindow(parent)
         button->setObjectName(id);
         button->setAccessibleName(tip);
         button->setToolTip(tip);
-        button->setFixedSize(46, 40);
-        button->setIcon(captionIcon(glyph, QColor(Theme::TEXT2)));
+        button->setFixedSize(46, 44);
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setIcon(captionIcon(glyph));
         row->addWidget(button);
         return button;
     };
-    auto *minimize = makeButton("WindowMinimize", QStringLiteral("最小化"), 0);
+    m_minimize = makeButton("WindowMinimize", QStringLiteral("最小化"), 0);
     m_maximize = makeButton("WindowMaximize", QStringLiteral("最大化"), 1);
-    auto *close = makeButton("WindowClose", QStringLiteral("关闭"), 3);
+    m_close = makeButton("WindowClose", QStringLiteral("关闭"), 3);
+    auto *minimize = m_minimize, *close = m_close;
     connect(minimize, &QToolButton::clicked, this, &QWidget::showMinimized);
     connect(m_maximize, &QToolButton::clicked, this, [this] { toggleMaximized(); });
     connect(close, &QToolButton::clicked, this, &QWidget::close);
     m_titleBar->installEventFilter(this);
+    connect(Theme::notifier(), &Theme::Notifier::changed, this, &FramelessWindow::applyThemeToChrome);
     for (auto *label : m_titleBar->findChildren<QLabel *>()) {
         label->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
@@ -95,6 +113,13 @@ FramelessWindow::FramelessWindow(QWidget *parent) : QMainWindow(parent)
 void FramelessWindow::setContextTitle(const QString &title)
 {
     m_context->setText(title);
+}
+
+void FramelessWindow::addTitleWidget(QWidget *widget)
+{
+    auto *row = static_cast<QHBoxLayout *>(m_titleBar->layout());
+    row->insertWidget(row->indexOf(m_minimize), widget, 0, Qt::AlignVCenter);
+    row->insertSpacing(row->indexOf(m_minimize), 8);
 }
 
 void FramelessWindow::toggleMaximized()
@@ -107,7 +132,21 @@ void FramelessWindow::updateControls()
     const QString tip = isMaximized() ? QStringLiteral("还原") : QStringLiteral("最大化");
     m_maximize->setToolTip(tip);
     m_maximize->setAccessibleName(tip);
-    m_maximize->setIcon(captionIcon(isMaximized() ? 2 : 1, QColor(Theme::TEXT2)));
+    m_maximize->setIcon(captionIcon(isMaximized() ? 2 : 1));
+}
+
+void FramelessWindow::applyThemeToChrome()
+{
+    // Caption glyphs are pixmaps; redraw them in the new palette.
+    m_minimize->setIcon(captionIcon(0));
+    m_close->setIcon(captionIcon(3));
+    updateControls();
+#ifdef Q_OS_WIN
+    if (testAttribute(Qt::WA_WState_Created)) {
+        const BOOL dark = Theme::c().dark;
+        DwmSetWindowAttribute(reinterpret_cast<HWND>(winId()), 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+    }
+#endif
 }
 
 void FramelessWindow::changeEvent(QEvent *event)
@@ -133,7 +172,7 @@ void FramelessWindow::showEvent(QShowEvent *event)
     // DWM supplies the native shadow without a translucent full-window backing store.
     const MARGINS margins = {1, 1, 1, 1};
     DwmExtendFrameIntoClientArea(hwnd, &margins);
-    const BOOL dark = FALSE;
+    const BOOL dark = Theme::c().dark;
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
 #endif
     updateControls();

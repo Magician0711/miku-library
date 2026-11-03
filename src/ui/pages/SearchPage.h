@@ -10,6 +10,7 @@ class CardGrid;
 class EmptyState;
 class QLabel;
 class SearchInput;
+class QFrame;
 
 class SearchPage : public QWidget {
     Q_OBJECT
@@ -22,6 +23,9 @@ public:
 signals:
     void animeSelected(AnimeSubject subject);
 
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override;
+
 private:
     void search();
     void resetSearch();
@@ -29,6 +33,7 @@ private:
     BangumiClient *m_bangumi;
     ImageLoader *m_images;
     SearchInput *m_edit;
+    QFrame *m_panel;
     QLabel *m_status;
     CardGrid *m_grid;
     EmptyState *m_empty;

@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include "core/DownloaderSettings.h"
+#include "ui/Theme.h"
 
 class TorrentEngine;
 struct AppConfig;
@@ -11,6 +12,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QTabWidget;
+class QButtonGroup;
 
 class SettingsPage : public QWidget {
     Q_OBJECT
@@ -19,6 +21,8 @@ public:
     void editDownloader(const QString &type={});
 signals:
     void downloaderChanged();
+    // Appearance applies immediately; the main window saves it.
+    void appearanceRequested(Theme::Mode mode);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -29,6 +33,7 @@ private:
     void updateDownloaderFields();
     void saveDownloaderDraft();
     QTabWidget *m_tabs;
+    QButtonGroup *m_appearance;
     QWidget *m_downloaderTab;
     QComboBox *m_downloaderType;
     QLineEdit *m_downloaderPath;

@@ -77,6 +77,8 @@ int main(int argc, char *argv[])
     qInstallMessageHandler(messageHandler);
 
     AppConfig config = AppConfig::load();
+    if (const auto appearance = Theme::modeFromString(config.appearance); appearance != Theme::mode())
+        Theme::setMode(appearance);
     QString directoryError;
     const auto directoryState=config.prepareDownloadDirectory(&directoryError);
     if(directoryState==AppConfig::DownloadDirectoryState::MissingSaved

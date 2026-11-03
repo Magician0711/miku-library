@@ -7,26 +7,49 @@
 #include "ui/Widgets.h"
 #include "net/BangumiClient.h"
 
-#include <QHash>
-#include <QLabel>
-#include <QScrollArea>
-#include <QVBoxLayout>
-#include <QGridLayout>
+#include <QButtonGroup>
 #include <QFrame>
+#include <QHash>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPointer>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSet>
+#include <QTimer>
+#include <QVBoxLayout>
+
+namespace {
+enum Scope { All, Followed, Local };
+}
 
 LibraryPage::LibraryPage(Database *db, BangumiClient *bangumi, ImageLoader *images, LocalLibrary *library, QWidget *parent)
-    : QWidget(parent), m_db(db), m_bangumi(bangumi), m_images(images), m_library(library)
+    : QWidget(parent), m_library(library), m_db(db), m_bangumi(bangumi), m_images(images)
 {
-    connect(library,&LocalLibrary::changed,this,[this]{if(isVisible())refresh();});
-    auto *layout=new QVBoxLayout(this);
-    layout->setContentsMargins(32,24,32,20); layout->setSpacing(26);
-    layout->addWidget(pageHeading(QStringLiteral("我的追番"),QStringLiteral("把喜欢的作品留在这里，随时接着看。")));
-    auto *results=new QGridLayout; results->setContentsMargins(0,0,0,0);
-    auto *scroll=new QScrollArea(this); scroll->setWidgetResizable(true); scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_grid=new CardGrid(m_images,scroll); connect(m_grid,&CardGrid::cardClicked,this,&LibraryPage::animeSelected);
-    scroll->setWidget(m_grid); results->addWidget(scroll,0,0);
-    m_empty=new EmptyState(Icons::HEART,QStringLiteral("收藏室，等你添上第一部"),QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"),this);
-    results->addWidget(m_empty,0,0); layout->addLayout(results,1);
+    // Library changes and metadata fetches can arrive in bursts; refresh once per burst.
+    m_refreshTimer=new QTimer(this); m_refreshTimer->setSingleShot(true); m_refreshTimer->setInterval(50);
+    connect(m_refreshTimer,&QTimer::timeout,this,&LibraryPage::refresh);
+    connect(library,&LocalLibrary::changed,this,[this]{if(isVisible())m_refreshTimer->start();});
+
+    auto *layout=pageLayout(this);
+    auto header=pageHeader(QStringLiteral("我的追番"),this);
+    m_count=header.meta;
+    auto *scopeBar=new QFrame(this); scopeBar->setObjectName("Segmented");
+    auto *scopeRow=new QHBoxLayout(scopeBar); scopeRow->setContentsMargins(4,4,4,4); scopeRow->setSpacing(2);
+    m_scope=new QButtonGroup(this);
+    const QStringList scopes={QStringLiteral("全部"),QStringLiteral("追番"),QStringLiteral("已下载")};
+    for(int i=0;i<scopes.size();++i) {
+        auto *button=new QPushButton(scopes.at(i),scopeBar); button->setObjectName("SegmentButton");
+        button->setCheckable(true); button->setChecked(i==All); button->setCursor(Qt::PointingHandCursor);
+        m_scope->addButton(button,i); scopeRow->addWidget(button);
+    }
+    connect(m_scope,&QButtonGroup::idClicked,this,&LibraryPage::refresh);
+    header.actions->addWidget(scopeBar);
+    layout->addWidget(header.widget);
+
+    m_grid=new CardGrid(m_images); connect(m_grid,&CardGrid::cardClicked,this,&LibraryPage::animeSelected);
+    m_empty=new EmptyState("library",QStringLiteral("收藏室，等你添上第一部"),QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"),this);
+    layout->addWidget(overlayStack(scrollArea(m_grid),m_empty,this),1);
 }
 
 void LibraryPage::showEvent(QShowEvent *event)
@@ -37,38 +60,40 @@ void LibraryPage::showEvent(QShowEvent *event)
 
 void LibraryPage::refresh()
 {
-    auto ids = m_db->followedIds();
+    const int scope=m_scope->checkedId();
+    const auto followed=m_db->followedIds();
     QHash<int,AnimeSubject> local;
-    for(const auto &subject:m_library->subjects()) {
-        local.insert(subject.bangumiId,subject);
-        if(!ids.contains(subject.bangumiId))ids.append(subject.bangumiId);
-    }
+    for(const auto &subject:m_library->subjects()) local.insert(subject.bangumiId,subject);
+
+    QVector<int> ids;
+    if(scope!=Local) ids=followed;
+    if(scope!=Followed)
+        for(auto it=local.cbegin();it!=local.cend();++it)
+            if(!ids.contains(it.key()))ids.append(it.key());
+
+    m_count->setText(QStringLiteral("%1 部收藏 · %2 部已下载").arg(followed.size()).arg(local.size()));
     if (ids.isEmpty()) {
         m_grid->clear();
-        m_empty->setText(QStringLiteral("还没有追番"),
-                         QStringLiteral("在番剧详情页点击「追番」即可加入这里。"));
+        if(scope==Local) m_empty->setText(QStringLiteral("还没有下载完成的番剧"),QStringLiteral("下载完成的视频会出现在这里，可直接播放。"));
+        else m_empty->setText(QStringLiteral("收藏室，等你添上第一部"),QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"));
         m_empty->show();
         return;
     }
     m_empty->hide();
 
-    QHash<int, AnimeSubject> loaded=local;
-    for (int id : ids) {
-        if (auto subject = m_db->getSubject(id))
-            loaded.insert(id, *subject);
-    }
-
     QVector<AnimeSubject> subjects;
+    QPointer<LibraryPage> self(this);
     for (int id : ids) {
-        auto it = loaded.find(id);
-        if (it != loaded.end()) {
-            subjects.push_back(it.value());
-            continue;
-        }
-        m_bangumi->getSubject(id, [this, id](AnimeSubject subject, QString error) {
+        if (auto subject = m_db->getSubject(id)) { subjects.push_back(*subject); continue; }
+        if (local.contains(id)) { subjects.push_back(local.value(id)); continue; }
+        if (m_fetching.contains(id)) continue;
+        m_fetching.insert(id);
+        m_bangumi->getSubject(id, [self, id](AnimeSubject subject, QString error) {
+            if (!self) return;
+            self->m_fetching.remove(id);
             if (error.isEmpty() && subject.bangumiId == id) {
-                m_db->upsertSubject(subject);
-                refresh();
+                self->m_db->upsertSubject(subject);
+                self->m_refreshTimer->start();
             }
         });
     }

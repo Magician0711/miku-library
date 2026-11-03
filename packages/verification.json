@@ -1,21 +1,26 @@
 {
   "date": "2026-11-03",
-  "passed": 171,
+  "passed": 292,
   "failed": 0,
   "tests": [
     {
-      "test": "download",
-      "passed": 46,
+      "test": "window",
+      "passed": 10,
       "failed": 0
     },
     {
-      "test": "external-downloader",
-      "passed": 29,
+      "test": "controls",
+      "passed": 20,
       "failed": 0
     },
     {
-      "test": "rpc",
-      "passed": 22,
+      "test": "ui-audit",
+      "passed": 25,
+      "failed": 0
+    },
+    {
+      "test": "search-input",
+      "passed": 14,
       "failed": 0
     },
     {
@@ -24,9 +29,44 @@
       "failed": 0
     },
     {
+      "test": "detail-library",
+      "passed": 24,
+      "failed": 0
+    },
+    {
+      "test": "directory",
+      "passed": 10,
+      "failed": 0
+    },
+    {
       "test": "local-library",
       "passed": 49,
       "failed": 0
+    },
+    {
+      "test": "optimization",
+      "passed": 18,
+      "failed": 0
+    },
+    {
+      "test": "rpc",
+      "passed": 22,
+      "failed": 0
+    },
+    {
+      "test": "external-downloader",
+      "passed": 29,
+      "failed": 0
+    },
+    {
+      "test": "download",
+      "passed": 46,
+      "failed": 0
     }
-  ]
+  ],
+  "portable_package": {
+    "dependency_audit": "PASS",
+    "zip_and_extracted_hashes": "PASS",
+    "isolated_startup": "PASS"
+  }
 }

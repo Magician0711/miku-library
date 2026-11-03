@@ -28,6 +28,7 @@ private:
     void load();
     void showDay(int weekday);
     void selectToday();
+    void updateTabs();
 
     BangumiClient *m_bangumi;
     ImageLoader *m_images;

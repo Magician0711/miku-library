@@ -2,6 +2,7 @@
 
 #include "core/Models.h"
 
+#include <QSet>
 #include <QShowEvent>
 #include <QWidget>
 
@@ -11,6 +12,9 @@ class BangumiClient;
 class ImageLoader;
 class CardGrid;
 class EmptyState;
+class QButtonGroup;
+class QLabel;
+class QTimer;
 
 class LibraryPage : public QWidget {
     Q_OBJECT
@@ -32,4 +36,8 @@ private:
     ImageLoader *m_images;
     CardGrid *m_grid;
     EmptyState *m_empty;
+    QLabel *m_count;
+    QButtonGroup *m_scope;
+    QTimer *m_refreshTimer;
+    QSet<int> m_fetching;
 };

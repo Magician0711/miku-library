@@ -88,7 +88,7 @@ protected:
         const QRectF body=QRectF(rect()).adjusted(6,6,-6,-6);
         p.setPen(Qt::NoPen);
         for(int i=5;i>=1;--i){p.setBrush(QColor(28,70,65,3));p.drawRoundedRect(body.adjusted(-i,-i+2,i,i+2),8+i,8+i);}
-        p.setBrush(QColor("#fcfffe"));p.setPen(QPen(QColor(Theme::BORDER),1));p.drawRoundedRect(body,8,8);
+        p.setBrush(QColor(Theme::c().surface));p.setPen(QPen(QColor(Theme::c().border),1));p.drawRoundedRect(body,8,8);
     }
 private:
     QLabel *m_text;
@@ -153,7 +153,7 @@ public:
         auto *outer=new QVBoxLayout(this);outer->setContentsMargins(14,14,14,14);
         auto *panel=new QFrame(this);panel->setObjectName("DialogPanel");outer->addWidget(panel);
         auto *shadow=new QGraphicsDropShadowEffect(panel);shadow->setBlurRadius(24);shadow->setOffset(0,5);
-        shadow->setColor(QColor(24,65,60,30));panel->setGraphicsEffect(shadow);
+        shadow->setColor(Theme::c().shadow);panel->setGraphicsEffect(shadow);
         auto *body=new QVBoxLayout(panel);body->setContentsMargins(24,18,24,22);body->setSpacing(18);
         m_header=new QWidget(panel);m_header->setObjectName("DialogHeader");m_header->installEventFilter(this);
         auto *heading=new QHBoxLayout(m_header);heading->setContentsMargins(0,0,0,0);
@@ -210,7 +210,7 @@ QString pickFile(QWidget *parent,const QString &title,const QString &path,QFileD
     };
     for(const auto &action:actions) {
         if(auto *button=picker->findChild<QToolButton *>(action.name)) {
-            button->setProperty("pickerTool",true);button->setIcon(Theme::icon(action.icon,QColor(Theme::ACCENT_TEXT)));
+            button->setProperty("pickerTool",true);button->setIcon(Theme::icon(action.icon,&Theme::Palette::accentText));
             button->setIconSize(QSize(19,19));button->setFixedSize(34,34);button->setAutoRaise(true);
             button->setToolTip(QString::fromUtf16(action.label));button->setAccessibleName(QString::fromUtf16(action.label));
         }
@@ -288,8 +288,8 @@ void message(QWidget *parent,const QString &title,const QString &text,Notice not
     auto *icon=new QLabel(&dialog);icon->setObjectName(notice==Notice::Error?"NoticeError":notice==Notice::Warning?"NoticeWarning":"NoticeInfo");
     icon->setFixedSize(40,40);icon->setAlignment(Qt::AlignCenter);
     const QString kind=notice==Notice::Error?"error":notice==Notice::Warning?"warning":"info";
-    const QColor color(notice==Notice::Error?Theme::ERR:notice==Notice::Warning?Theme::WARN:Theme::ACCENT_TEXT);
-    icon->setPixmap(Theme::icon(kind,color).pixmap(24,24));row->addWidget(icon,0,Qt::AlignTop);
+    const Theme::Role role=notice==Notice::Error?&Theme::Palette::err:notice==Notice::Warning?&Theme::Palette::warn:&Theme::Palette::accentText;
+    icon->setPixmap(Theme::icon(kind,role).pixmap(24,24));row->addWidget(icon,0,Qt::AlignTop);
     auto *textLabel=bodyText(text,&dialog);textLabel->setFixedWidth(360);
     auto *scroll=new QScrollArea(&dialog);scroll->setWidgetResizable(true);scroll->setWidget(textLabel);
     const int height=textLabel->heightForWidth(360);

@@ -55,6 +55,7 @@ AppConfig AppConfig::load()
         cfg.paths.useHardlink = paths.value(QStringLiteral("use_hardlink")).toBool(cfg.paths.useHardlink);
     }
     cfg.theme = root.value(QStringLiteral("theme")).toString(cfg.theme);
+    cfg.appearance = root.value(QStringLiteral("appearance")).toString(cfg.appearance);
     cfg.language = root.value(QStringLiteral("language")).toString(cfg.language);
 
     cfg.downloader=DownloaderSettings::fromJson(root.value("downloader").toObject());
@@ -79,6 +80,7 @@ bool AppConfig::save() const
     root.insert(QStringLiteral("engine"), engine.toJson());
     root.insert("downloader",downloader.toJson());
     root.insert(QStringLiteral("theme"), theme);
+    root.insert(QStringLiteral("appearance"), appearance);
     root.insert(QStringLiteral("language"), language);
 
     QSaveFile file(configPath());

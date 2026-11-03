@@ -49,7 +49,10 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
+    struct RowState { bool ready = false; bool active = false; bool external = false; };
     void buildHero(QVBoxLayout *layout);
+    QWidget *buildResourceRow(const Release &release, const RowState &state, QWidget *parent);
+    void updateFollowButton(bool following);
     void buildFilters(QVBoxLayout *layout);
     void buildSourceStrip(QVBoxLayout *layout);
     void refreshSources();
@@ -90,7 +93,7 @@ private:
     QLabel *m_poster;
     QLabel *m_title;
     QLabel *m_subtitle;
-    QLabel *m_stats;
+    QWidget *m_stats;
     QLabel *m_summary;
     QLabel *m_progress;
     QLabel *m_countLabel;

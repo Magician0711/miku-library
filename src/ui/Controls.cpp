@@ -23,6 +23,7 @@
 #include <QScrollBar>
 #include <QStyleOptionViewItem>
 #include <QTimer>
+#include <QVariantAnimation>
 
 #ifdef Q_OS_WIN
 #define NOMINMAX
@@ -45,17 +46,17 @@ public:
         const QRectF rect=QRectF(option.rect).adjusted(3,2,-3,-2);
         if(checked || hover || focused) {
             p->setPen(Qt::NoPen);
-            p->setBrush(QColor(checked ? Theme::ACCENT_SOFT : QStringLiteral("#f0f7f6")));
+            p->setBrush(QColor(checked ? Theme::c().accentSoft : Theme::c().surface2));
             p->drawRoundedRect(rect,7,7);
         }
         p->setFont(option.font);
-        p->setPen(QColor(!enabled ? Theme::TEXT3 : checked ? Theme::ACCENT_TEXT : Theme::TEXT));
+        p->setPen(QColor(!enabled ? Theme::c().text3 : checked ? Theme::c().accentText : Theme::c().text));
         const QRect textRect=option.rect.adjusted(16,0,-36,0);
         p->drawText(textRect,Qt::AlignLeft|Qt::AlignVCenter,
             option.fontMetrics.elidedText(index.data().toString(),Qt::ElideRight,textRect.width()));
         if(checked) {
             const QPointF c(option.rect.right()-20,option.rect.center().y());
-            p->setPen(QPen(QColor(Theme::ACCENT_TEXT),1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+            p->setPen(QPen(QColor(Theme::c().accentText),1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
             QPainterPath path; path.moveTo(c+QPointF(-4,0)); path.lineTo(c+QPointF(-1,3)); path.lineTo(c+QPointF(5,-4));
             p->drawPath(path);
         }
@@ -75,7 +76,7 @@ public:
         setObjectName("DownloaderPopup");setAttribute(Qt::WA_TranslucentBackground);
         auto *outer=new QVBoxLayout(this);outer->setContentsMargins(10,8,10,14);
         auto *panel=new QFrame(this);panel->setObjectName("DownloaderPopupPanel");outer->addWidget(panel);
-        auto *shadow=new QGraphicsDropShadowEffect(panel);shadow->setBlurRadius(18);shadow->setOffset(0,3);shadow->setColor(QColor(25,70,65,32));panel->setGraphicsEffect(shadow);
+        auto *shadow=new QGraphicsDropShadowEffect(panel);shadow->setBlurRadius(18);shadow->setOffset(0,3);shadow->setColor(Theme::c().shadow);panel->setGraphicsEffect(shadow);
         auto *body=new QVBoxLayout(panel);body->setContentsMargins(8,12,8,8);body->setSpacing(4);
         auto *heading=new QLabel(QStringLiteral("选择下载器"),panel);heading->setObjectName("DownloaderPopupHeading");body->addWidget(heading);
         const QMap<QString,QString> descriptions={
@@ -88,7 +89,7 @@ public:
             row->setAutoDefault(false);row->setFixedHeight(56);row->setCursor(Qt::PointingHandCursor);row->installEventFilter(this);
             auto *layout=new QHBoxLayout(row);layout->setContentsMargins(10,7,10,7);layout->setSpacing(10);
             auto *icon=new QLabel(row);icon->setObjectName("DownloaderOptionIcon");icon->setFixedSize(30,30);icon->setAlignment(Qt::AlignCenter);
-            icon->setPixmap(Theme::icon(type=="builtin"?"download":type=="custom"?"settings":"external",QColor(Theme::ACCENT_TEXT)).pixmap(18,18));layout->addWidget(icon);
+            icon->setPixmap(Theme::icon(type=="builtin"?"download":type=="custom"?"settings":"external",&Theme::Palette::accentText).pixmap(18,18));layout->addWidget(icon);
             auto *text=new QVBoxLayout;text->setSpacing(2);auto *name=new QLabel(DownloaderSettings::name(type),row);name->setObjectName("DownloaderOptionName");
             auto *description=new QLabel(descriptions.value(type),row);description->setObjectName("DownloaderOptionDescription");text->addWidget(name);text->addWidget(description);layout->addLayout(text,1);
             const bool configured=type=="builtin"||QFileInfo(settings.programs.value(type)).isFile();
@@ -140,7 +141,7 @@ QString Ui::chooseDownloader(QWidget *anchor,const DownloaderSettings &settings)
 SelectBox::SelectBox(QWidget *parent) : QComboBox(parent)
 {
     setCursor(Qt::PointingHandCursor);
-    setMinimumHeight(40);
+    setMinimumHeight(38);
     setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
     setMaxVisibleItems(8);
     auto *list=new QListView;
@@ -151,15 +152,11 @@ SelectBox::SelectBox(QWidget *parent) : QComboBox(parent)
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     list->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    list->setStyleSheet(QStringLiteral(
-        "QListView#SelectOptions { background:white; color:#243b3a; border:1px solid #dce9e7;"
-        "border-radius:10px; padding:6px; outline:0; }"
-        "QListView#SelectOptions::item { border:none; padding:0; }"));
     setView(list);
     setItemDelegate(new OptionDelegate(this));
     auto *shadow=new QGraphicsDropShadowEffect(list);
     shadow->setBlurRadius(18); shadow->setOffset(0,3);
-    shadow->setColor(QColor(25,70,65,32));
+    shadow->setColor(Theme::c().shadow);
     list->setGraphicsEffect(shadow);
     QWidget *popup=list->parentWidget();
     popup->setWindowFlags(Qt::Popup|Qt::FramelessWindowHint|Qt::NoDropShadowWindowHint);
@@ -278,4 +275,46 @@ void SearchInput::focusOutEvent(QFocusEvent *event)
     QLineEdit::focusOutEvent(event);
     m_composing=false;m_confirmingCandidate=false;
     if(m_candidateRelease)m_candidateRelease->stop();
+}
+
+ToggleSwitch::ToggleSwitch(const QString &text,QWidget *parent) : QCheckBox(text,parent)
+{
+    setCursor(Qt::PointingHandCursor);
+    setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
+    m_animation=new QVariantAnimation(this);m_animation->setDuration(140);
+    m_animation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_animation,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_position=value.toReal();update();});
+    connect(this,&QCheckBox::toggled,this,[this](bool on) {
+        // Programmatic changes on hidden pages should not animate.
+        if(!isVisible()){m_position=on?1:0;update();return;}
+        m_animation->stop();m_animation->setStartValue(m_position);m_animation->setEndValue(on?1.0:0.0);m_animation->start();
+    });
+}
+
+QSize ToggleSwitch::sizeHint() const
+{
+    const int textWidth=text().isEmpty()?0:fontMetrics().horizontalAdvance(text())+10;
+    return {kTrackWidth+textWidth,qMax(kTrackHeight+4,fontMetrics().height()+4)};
+}
+
+bool ToggleSwitch::hitButton(const QPoint &position) const { return rect().contains(position); }
+
+void ToggleSwitch::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
+    const QRectF track(0.5,(height()-kTrackHeight)/2.0,kTrackWidth-1,kTrackHeight);
+    const QColor off(isEnabled()?Theme::c().borderStrong:Theme::c().surface3),on(isEnabled()?Theme::c().accent:Theme::c().accentSoft2);
+    const auto mix=[](const QColor &a,const QColor &b,qreal t){
+        return QColor::fromRgbF(a.redF()+(b.redF()-a.redF())*t,a.greenF()+(b.greenF()-a.greenF())*t,a.blueF()+(b.blueF()-a.blueF())*t);
+    };
+    p.setPen(hasFocus()?QPen(QColor(Theme::c().accentText),1.2):Qt::NoPen);
+    p.setBrush(mix(off,on,m_position));p.drawRoundedRect(track,kTrackHeight/2.0,kTrackHeight/2.0);
+    const qreal knob=kTrackHeight-6;
+    const QPointF center(track.left()+3+knob/2+(track.width()-6-knob)*m_position,track.center().y());
+    p.setPen(Qt::NoPen);p.setBrush(QColor(0,0,0,28));p.drawEllipse(center+QPointF(0,0.8),knob/2,knob/2);
+    p.setBrush(Qt::white);p.drawEllipse(center,knob/2,knob/2);
+    if(!text().isEmpty()) {
+        p.setPen(QColor(isEnabled()?Theme::c().text:Theme::c().text3));
+        p.drawText(QRect(kTrackWidth+10,0,width()-kTrackWidth-10,height()),Qt::AlignLeft|Qt::AlignVCenter,text());
+    }
 }

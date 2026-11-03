@@ -10,6 +10,7 @@
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
@@ -20,9 +21,11 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
@@ -31,15 +34,24 @@
 #include <limits>
 
 namespace {
+constexpr int kPosterWidth = 164;
+constexpr int kPosterHeight = 232;
+constexpr int kSummaryLines = 3;
+constexpr int kRowsPerGroup = 6;
+constexpr int kInitialGroups = 3;
 
-QLabel *statLabel(const QString &text)
+// Height of the collapsed synopsis: whole lines only, never a clipped partial line.
+int collapsedHeight(QLabel *summary)
 {
-    auto *label = new QLabel(text);
-    label->setStyleSheet(QStringLiteral("color:#243b3a;font-size:10pt;"));
-    return label;
+    summary->ensurePolished();
+    return summary->fontMetrics().lineSpacing() * kSummaryLines;
 }
 
-} // namespace
+QString groupTitle(const QString &name, qsizetype count)
+{
+    return QStringLiteral("%1    %2 个资源").arg(name).arg(count);
+}
+}
 
 AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *bangumi, Catalog *catalog,
                                  ImageLoader *images, LocalLibrary *library, std::function<bool(int)> isFollowing, QWidget *parent)
@@ -51,6 +63,7 @@ AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *ba
     , m_images(images)
     , m_isFollowing(std::move(isFollowing))
 {
+    // Keep the render timer as the first QTimer child; tests drive it directly.
     m_renderTimer = new QTimer(this);
     m_renderTimer->setSingleShot(true);
     m_renderTimer->setInterval(180);
@@ -58,47 +71,60 @@ AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *ba
 
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
-    auto *scroll = new QScrollArea(this);
-    m_scroll = scroll;
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    outer->addWidget(scroll);
-
     auto *body = new QWidget();
     body->setObjectName(QStringLiteral("ScrollBody"));
-    scroll->setWidget(body);
-    auto *layout = new QVBoxLayout(body);
-    layout->setContentsMargins(32,20,32,24);
-    layout->setSpacing(18);
+    m_scroll = scrollArea(body, this);
+    outer->addWidget(m_scroll);
+
+    // Keep the reading column comfortable on maximised windows: cap and centre it.
+    auto *centered = new QHBoxLayout(body);
+    centered->setContentsMargins(0, 0, 0, 0);
+    auto *column = new QWidget(body);
+    column->setMaximumWidth(1280);
+    centered->addStretch(1);
+    centered->addWidget(column, 100);
+    centered->addStretch(1);
+    auto *layout = new QVBoxLayout(column);
+    layout->setContentsMargins(28, 18, 28, 24);
+    layout->setSpacing(16);
 
     auto *top = new QHBoxLayout();
-    auto *back = new QPushButton(this);
-    back->setIcon(Theme::icon("back"));
-    back->setObjectName(QStringLiteral("IconButton"));
-    back->setFixedSize(34, 34);
+    auto *back = new QPushButton(QStringLiteral("返回"), this);
+    back->setObjectName(QStringLiteral("BackButton"));
+    back->setIcon(Theme::icon("chevron-left"));
+    back->setCursor(Qt::PointingHandCursor);
     back->setToolTip(QStringLiteral("返回 (Esc)"));
     connect(back, &QPushButton::clicked, this, &AnimeDetailPage::backRequested);
     top->addWidget(back);
-    top->addWidget(label(QStringLiteral("番剧详情"), QStringLiteral("Muted")));
     top->addStretch(1);
-    auto *refresh = new QPushButton(QStringLiteral("重新搜索资源"), this);
-    m_resourceSearch=refresh;refresh->setObjectName("ResourceSearchAction");
-    connect(refresh, &QPushButton::clicked, this, [this]{
+    m_resourceSearch = new QPushButton(QStringLiteral("重新搜索资源"), this);
+    m_resourceSearch->setObjectName("ResourceSearchAction");
+    m_resourceSearch->setIcon(Theme::icon("refresh"));
+    connect(m_resourceSearch, &QPushButton::clicked, this, [this]{
         if(m_localOnly)emit resourceSearchRequested(m_subject);
         else {resetFilters();startSearch();}
     });
-    top->addWidget(refresh);
+    top->addWidget(m_resourceSearch);
     layout->addLayout(top);
 
     buildHero(layout);
     buildSourceStrip(layout);
 
     auto *section = new QHBoxLayout();
+    section->setSpacing(10);
     m_sectionTitle=label(QStringLiteral("可用资源"),QStringLiteral("H2"));
-    section->addWidget(m_sectionTitle);
+    section->addWidget(m_sectionTitle,0,Qt::AlignVCenter);
     m_countLabel = label(QString(), QStringLiteral("Faint"));
-    section->addWidget(m_countLabel);
+    section->addWidget(m_countLabel,0,Qt::AlignVCenter);
     section->addStretch(1);
+    section->addWidget(label(QStringLiteral("排序"),"Faint"),0,Qt::AlignVCenter);
+    m_sort = new SelectBox();
+    for (const auto &[text, data] : QVector<QPair<QString, QString>>{
+             {QStringLiteral("最近更新"), QStringLiteral("latest")}, {QStringLiteral("做种最多"), QStringLiteral("seeders")},
+             {QStringLiteral("资源最多"), QStringLiteral("count")}, {QStringLiteral("名称"), QStringLiteral("name")}})
+        m_sort->addItem(text, data);
+    m_sort->setFixedWidth(132);
+    section->addWidget(m_sort);
     layout->addLayout(section);
 
     buildFilters(layout);
@@ -109,9 +135,9 @@ AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *ba
     m_groupsLayout->setSpacing(12);
     layout->addWidget(m_groupsBox);
 
-    m_empty = new EmptyState(Icons::SEARCH, QStringLiteral("正在搜索资源…"),
+    m_empty = new EmptyState("search", QStringLiteral("正在搜索资源…"),
                              QStringLiteral("从已启用的资源站并发检索，结果会逐步出现。"));
-    m_empty->setMinimumHeight(150);
+    m_empty->setMinimumHeight(180);
     layout->addWidget(m_empty);
     layout->addStretch(1);
 
@@ -127,29 +153,28 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
     auto *hero = new QFrame();
     hero->setObjectName(QStringLiteral("DetailHero"));
     auto *row = new QHBoxLayout(hero);
-    row->setContentsMargins(0,8,0,14);
-    row->setSpacing(28);
+    row->setContentsMargins(20,20,24,20);
+    row->setSpacing(24);
 
     m_poster = new QLabel(hero);
-    m_poster->setFixedSize(172,244);
+    m_poster->setObjectName("Poster");
+    m_poster->setFixedSize(kPosterWidth,kPosterHeight);
     m_poster->setAlignment(Qt::AlignCenter);
-    m_poster->setStyleSheet(QStringLiteral("background:#e6f1ef;border-radius:12px;color:#718785;"));
     row->addWidget(m_poster, 0, Qt::AlignTop);
 
     auto *col = new QVBoxLayout();
-    col->setSpacing(6);
+    col->setSpacing(8);
 
     m_title = label(QString(), QStringLiteral("H1"), true);
+    m_title->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_subtitle = label(QString(), QStringLiteral("Muted"), true);
-    m_stats = new QLabel();
-    m_stats->setObjectName(QStringLiteral("Muted"));
-    m_stats->setWordWrap(true);
-    m_summary = label(QString(), QStringLiteral("Muted"), true);
-    m_summary->setMaximumHeight(92);
-    m_summary->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-
+    m_subtitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
     col->addWidget(m_title);
     col->addWidget(m_subtitle);
+
+    m_stats = new QWidget();
+    auto *statsLayout = new FlowLayout(m_stats, 6, 6);
+    Q_UNUSED(statsLayout);
     col->addWidget(m_stats);
 
     m_tagsBox = new QWidget();
@@ -157,20 +182,26 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
     m_tagsBox->setLayout(m_tagsLayout);
     col->addWidget(m_tagsBox);
 
+    m_summary = label(QString(), QStringLiteral("Muted"), true);
+    m_summary->setMaximumHeight(collapsedHeight(m_summary));
+    m_summary->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    m_summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
     col->addWidget(m_summary);
 
     auto *actions = new QHBoxLayout();
     actions->setSpacing(8);
-    m_followButton = new QPushButton(QStringLiteral("＋ 追番"), this);
+    m_followButton = new QPushButton(QStringLiteral("追番"), this);
     m_followButton->setObjectName(QStringLiteral("Primary"));
     m_followButton->setCheckable(true);
+    m_followButton->setCursor(Qt::PointingHandCursor);
     connect(m_followButton, &QPushButton::toggled, this, [this](bool checked) {
-        m_followButton->setText(checked ? QStringLiteral("✓ 已追番") : QStringLiteral("＋ 追番"));
+        updateFollowButton(checked);
         emit followChanged(m_subject, checked);
     });
     actions->addWidget(m_followButton);
 
     auto *bangumiButton = new QPushButton(QStringLiteral("Bangumi 页面"), this);
+    bangumiButton->setIcon(Theme::icon("external"));
     connect(bangumiButton, &QPushButton::clicked, this, [this] {
         if (!m_subject.bangumiUrl.isEmpty())
             QDesktopServices::openUrl(QUrl(m_subject.bangumiUrl));
@@ -180,17 +211,25 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
     m_moreButton = new QPushButton(QStringLiteral("展开简介"), this);
     m_moreButton->setObjectName(QStringLiteral("Ghost"));
     connect(m_moreButton, &QPushButton::clicked, this, [this] {
-        const bool expanded = m_summary->maximumHeight() > 92;
-        m_summary->setMaximumHeight(expanded ? 92 : QWIDGETSIZE_MAX);
+        const bool expanded = m_summary->maximumHeight() > collapsedHeight(m_summary);
+        m_summary->setMaximumHeight(expanded ? collapsedHeight(m_summary) : QWIDGETSIZE_MAX);
         m_moreButton->setText(expanded ? QStringLiteral("展开简介") : QStringLiteral("收起简介"));
     });
     actions->addWidget(m_moreButton);
     actions->addStretch(1);
+    col->addSpacing(4);
     col->addLayout(actions);
     col->addStretch(1);
 
     row->addLayout(col, 1);
     layout->addWidget(hero);
+}
+
+void AnimeDetailPage::updateFollowButton(bool following)
+{
+    m_followButton->setText(following ? QStringLiteral("已追番") : QStringLiteral("追番"));
+    m_followButton->setIcon(following ? Theme::icon("check", &Theme::Palette::accentText)
+                                      : Theme::icon("plus", &Theme::Palette::accentInk));
 }
 
 void AnimeDetailPage::buildSourceStrip(QVBoxLayout *layout)
@@ -199,15 +238,16 @@ void AnimeDetailPage::buildSourceStrip(QVBoxLayout *layout)
     m_sourcePanel=panel;
     panel->setObjectName(QStringLiteral("Panel"));
     auto *row = new QHBoxLayout(panel);
-    row->setContentsMargins(16, 9, 16, 9);
+    row->setContentsMargins(16, 10, 16, 10);
     row->setSpacing(14);
 
-    m_progress = label(QStringLiteral("待检索"), QStringLiteral("Muted"));
-    row->addWidget(m_progress);
+    m_progress = label(QStringLiteral("待检索"), QStringLiteral("StatValue"));
+    m_progress->setMinimumWidth(96);
+    row->addWidget(m_progress, 0, Qt::AlignTop);
 
     m_dotsBox = new QWidget(panel);
-    m_dotsLayout = new FlowLayout(m_dotsBox,12,10);
-    m_dotsLayout->setContentsMargins(0, 0, 0, 0);
+    m_dotsLayout = new FlowLayout(m_dotsBox,14,8);
+    m_dotsLayout->setContentsMargins(0, 2, 0, 2);
 
     refreshSources();
     row->addWidget(m_dotsBox,1);
@@ -216,13 +256,13 @@ void AnimeDetailPage::buildSourceStrip(QVBoxLayout *layout)
 
 void AnimeDetailPage::refreshSources()
 {
-    while(auto *item=m_dotsLayout->takeAt(0)){if(auto *widget=item->widget()){widget->hide();widget->deleteLater();}delete item;}
+    m_dotsLayout->clear();
     m_dots.clear();
     for (const auto &site : m_catalog->sites(true)) {
         auto *widget = new QWidget(m_dotsBox);
         auto *dotLayout = new QHBoxLayout(widget);
         dotLayout->setContentsMargins(0, 0, 0, 0);
-        dotLayout->setSpacing(5);
+        dotLayout->setSpacing(6);
         auto *dot = new StatusDot(QStringLiteral("busy"), widget);
         auto *name = label(site.name, QStringLiteral("Faint"), false, widget);
         dotLayout->addWidget(dot);
@@ -235,58 +275,52 @@ void AnimeDetailPage::refreshSources()
 void AnimeDetailPage::buildFilters(QVBoxLayout *layout)
 {
     m_filterBar = new QFrame();
-    m_filterBar->setObjectName(QStringLiteral("Panel"));
+    m_filterBar->setObjectName(QStringLiteral("FilterBar"));
     auto *v = new QVBoxLayout(m_filterBar);
-    v->setContentsMargins(16, 12, 16, 12);
-    v->setSpacing(8);
+    v->setContentsMargins(14, 12, 14, 12);
+    v->setSpacing(10);
 
-    auto makeCombo = [](const QVector<QPair<QString, QVariant>> &items) {
+    auto makeCombo = [](const QVector<QPair<QString, QVariant>> &items, const QString &tip) {
         auto *combo = new SelectBox();
         for (const auto &[text, data] : items)
             combo->addItem(text, data);
+        combo->setToolTip(tip);
+        combo->setAccessibleName(tip);
         return combo;
     };
 
-    m_season = makeCombo({{QStringLiteral("全部"), -1}});
-    m_kind = makeCombo({{QStringLiteral("全部"), QStringLiteral("all")},
+    // "全部…" entries name their own dimension, so the row needs no separate labels.
+    m_season = makeCombo({{QStringLiteral("全部季度"), -1}}, QStringLiteral("放送季度"));
+    m_kind = makeCombo({{QStringLiteral("全部类型"), QStringLiteral("all")},
                         {QStringLiteral("合集"), QStringLiteral("batch")},
-                        {QStringLiteral("单集"), QStringLiteral("single")}});
-    m_resolution = makeCombo({{QStringLiteral("全部"), QString()},
+                        {QStringLiteral("单集"), QStringLiteral("single")}}, QStringLiteral("资源类型"));
+    m_resolution = makeCombo({{QStringLiteral("全部清晰度"), QString()},
                               {QStringLiteral("4K"), QStringLiteral("2160p")},
                               {QStringLiteral("1080p"), QStringLiteral("1080p")},
-                              {QStringLiteral("720p"), QStringLiteral("720p")}});
-    m_subtitleFilter = makeCombo({{QStringLiteral("全部"), QString()},
-                            {QStringLiteral("中文"), QStringLiteral("zh")},
-                            {QStringLiteral("简体"), QStringLiteral("zh-Hans")},
-                            {QStringLiteral("繁体"), QStringLiteral("zh-Hant")},
-                            {QStringLiteral("英文"), QStringLiteral("en")}});
-    m_downloadStatus=makeCombo({{QStringLiteral("全部"),"all"},{QStringLiteral("已下载"),"downloaded"},{QStringLiteral("未下载"),"missing"}});
+                              {QStringLiteral("720p"), QStringLiteral("720p")}}, QStringLiteral("清晰度"));
+    m_subtitleFilter = makeCombo({{QStringLiteral("全部字幕"), QString()},
+                                  {QStringLiteral("中文"), QStringLiteral("zh")},
+                                  {QStringLiteral("简体"), QStringLiteral("zh-Hans")},
+                                  {QStringLiteral("繁体"), QStringLiteral("zh-Hant")},
+                                  {QStringLiteral("英文"), QStringLiteral("en")}}, QStringLiteral("字幕语言"));
+    m_downloadStatus = makeCombo({{QStringLiteral("全部状态"),"all"},{QStringLiteral("已下载"),"downloaded"},{QStringLiteral("未下载"),"missing"}},
+                                 QStringLiteral("下载状态"));
     m_downloadStatus->setObjectName("DownloadStatusFilter");
-    m_sort = makeCombo({{QStringLiteral("最近更新"), QStringLiteral("latest")},
-                        {QStringLiteral("做种最多"), QStringLiteral("seeders")},
-                        {QStringLiteral("资源最多"), QStringLiteral("count")},
-                        {QStringLiteral("名称"), QStringLiteral("name")}});
 
     auto *choices=new QHBoxLayout;
-    choices->setSpacing(16);
-    auto addField=[choices](const QString &name,QComboBox *combo) {
-        auto *col=new QVBoxLayout; col->setSpacing(6);
-        col->addWidget(label(name,"Faint")); col->addWidget(combo);
-        choices->addLayout(col,1);
-    };
-    addField(QStringLiteral("放送季度"),m_season);
-    addField(QStringLiteral("资源类型"),m_kind);
-    addField(QStringLiteral("清晰度"),m_resolution);
-    addField(QStringLiteral("字幕语言"),m_subtitleFilter);
-    addField(QStringLiteral("状态"),m_downloadStatus);
+    choices->setSpacing(10);
+    for (auto *combo : {m_season, m_kind, m_resolution, m_subtitleFilter, m_downloadStatus})
+        choices->addWidget(combo, 1);
     v->addLayout(choices);
+
     auto *tools=new QHBoxLayout; tools->setSpacing(12);
-    m_text=new QLineEdit; m_text->setPlaceholderText(QStringLiteral("筛选资源标题…"));
+    m_text=new QLineEdit; m_text->setObjectName("InlineFilter");
+    m_text->setPlaceholderText(QStringLiteral("在结果中筛选标题关键词…"));
+    m_text->addAction(Theme::icon("filter",&Theme::Palette::text3),QLineEdit::LeadingPosition);
     m_text->setClearButtonEnabled(true); tools->addWidget(m_text,1);
-    m_hdrOnly=new QCheckBox(QStringLiteral("HDR / 杜比视界")); tools->addWidget(m_hdrOnly);
-    tools->addWidget(m_sort);
-    auto *reset=new QPushButton(QStringLiteral("重置")); reset->setObjectName("Ghost"); tools->addWidget(reset);
-    v->addSpacing(6); v->addLayout(tools);
+    m_hdrOnly=new ToggleSwitch(QStringLiteral("仅 HDR / 杜比视界")); tools->addWidget(m_hdrOnly);
+    auto *reset=new QPushButton(QStringLiteral("重置筛选")); reset->setObjectName("Ghost"); tools->addWidget(reset);
+    v->addLayout(tools);
 
     for (auto *combo : {m_season, m_kind, m_resolution, m_subtitleFilter, m_sort, m_downloadStatus})
         connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), this, &AnimeDetailPage::scheduleRender);
@@ -304,6 +338,7 @@ void AnimeDetailPage::showSubject(const AnimeSubject &subject,bool localOnly)
     m_subject = subject;
     m_localOnly=localOnly;
     m_resourceSearch->setText(localOnly?QStringLiteral("查找可下载资源"):QStringLiteral("重新搜索资源"));
+    m_resourceSearch->setIcon(Theme::icon(localOnly?"search":"refresh"));
     m_sourcePanel->setVisible(!localOnly);
     m_sectionTitle->setText(localOnly?QStringLiteral("本地视频"):QStringLiteral("可用资源"));
     m_downloadStatus->setEnabled(!localOnly);
@@ -327,47 +362,52 @@ void AnimeDetailPage::updateHero()
     m_subtitle->setText(alt.join(QStringLiteral("  /  ")));
     m_subtitle->setVisible(!alt.isEmpty());
 
-    QStringList stats;
+    auto *statsLayout = static_cast<FlowLayout *>(m_stats->layout());
+    statsLayout->clear();
     if (m_subject.rating > 0)
-        stats << QStringLiteral("★ %1").arg(m_subject.rating, 0, 'f', 1)
-                     + (m_subject.rank > 0 ? QStringLiteral("  ·  #%1").arg(m_subject.rank) : QString());
-    if (m_subject.episodeCount > 0)
-        stats << QStringLiteral("%1 话").arg(m_subject.episodeCount);
-    if (!m_subject.airDate.isEmpty())
-        stats << m_subject.airDate;
-    if (!m_subject.studio.isEmpty())
-        stats << m_subject.studio;
-    m_stats->setText(stats.join(QStringLiteral("     ")));
+        statsLayout->addWidget(new Chip(QStringLiteral("★ %1").arg(m_subject.rating, 0, 'f', 1)
+                                            + (m_subject.rank > 0 ? QStringLiteral("  #%1").arg(m_subject.rank) : QString()),
+                                        &Theme::Palette::guessedBg, &Theme::Palette::guessedFg, QStringLiteral("Bangumi 评分与排名")));
+    QStringList facts;
+    if (m_subject.episodeCount > 0) facts << QStringLiteral("%1 话").arg(m_subject.episodeCount);
+    if (!m_subject.airDate.isEmpty()) facts << m_subject.airDate;
+    if (!m_subject.platform.isEmpty()) facts << m_subject.platform;
+    if (!m_subject.studio.isEmpty()) facts << m_subject.studio;
+    for (const auto &fact : facts)
+        statsLayout->addWidget(new Chip(fact, &Theme::Palette::surface2, &Theme::Palette::text2));
+    m_stats->setVisible(statsLayout->count() > 0);
 
     m_tagsLayout->clear();
     for (int i = 0; i < m_subject.tags.size() && i < 10; ++i)
-        m_tagsLayout->addWidget(new Chip(m_subject.tags.at(i), Theme::SURFACE3, Theme::TEXT2));
+        m_tagsLayout->addWidget(new Chip(m_subject.tags.at(i), &Theme::Palette::accentSoft, &Theme::Palette::accentText));
     m_tagsBox->setVisible(!m_subject.tags.isEmpty());
 
     m_summary->setText(m_subject.summary.isEmpty() ? QStringLiteral("暂无简介。") : m_subject.summary);
-    m_summary->setMaximumHeight(92);
+    m_summary->setMaximumHeight(collapsedHeight(m_summary));
     m_moreButton->setText(QStringLiteral("展开简介"));
-    m_moreButton->setVisible(m_subject.summary.size() > 140);
+    m_moreButton->setVisible(m_subject.summary.size() > 120);
 
     const bool following = m_isFollowing(m_subject.bangumiId);
-    m_followButton->blockSignals(true);
-    m_followButton->setChecked(following);
-    m_followButton->setText(following ? QStringLiteral("✓ 已追番") : QStringLiteral("＋ 追番"));
-    m_followButton->blockSignals(false);
+    {
+        QSignalBlocker blocker(m_followButton);
+        m_followButton->setChecked(following);
+    }
+    updateFollowButton(following);
 
     m_poster->setPixmap(QPixmap());
-    m_poster->setText(QStringLiteral("…"));
+    m_poster->setText(QStringLiteral("NEXUS"));
     const QString cover = BangumiClient::coverUrl(m_subject.coverUrl, 400);
     if (cover.isEmpty()) {
         m_poster->setText(QStringLiteral("无封面"));
         return;
     }
     const int id = m_subject.bangumiId;
-    m_images->request(cover, [this, id](QImage image) {
-        if (m_subject.bangumiId != id || image.isNull())
+    QPointer<AnimeDetailPage> self(this);
+    m_images->request(cover, [self, id](QImage image) {
+        if (!self || self->m_subject.bangumiId != id || image.isNull())
             return;
-        m_poster->setPixmap(coverPixmap(image, 172, 244, 10));
-        m_poster->setText(QString());
+        self->m_poster->setPixmap(coverPixmap(image, kPosterWidth, kPosterHeight, 10));
+        self->m_poster->setText(QString());
     });
 }
 
@@ -379,7 +419,7 @@ void AnimeDetailPage::startSearch()
     refreshSources();m_searching=true;
     m_releases.clear();
     clearGroups();
-    m_groupLimit = 3;
+    m_groupLimit = kInitialGroups;
     m_countLabel->clear();
     m_empty->setText(QStringLiteral("正在搜索资源…"),
                      QStringLiteral("从已启用的资源站并发检索，结果会逐步出现。"));
@@ -397,14 +437,15 @@ void AnimeDetailPage::startSearch()
     if(m_localOnly){m_searching=false;onFinished();return;}
     if (m_subject.aliases.isEmpty()) {
         const int id = m_subject.bangumiId;
-        m_bangumi->getSubject(id, [this, id,generation](AnimeSubject full, QString error) {
-            if (m_subject.bangumiId != id||generation!=m_searchGeneration)
+        QPointer<AnimeDetailPage> self(this);
+        m_bangumi->getSubject(id, [self, id,generation](AnimeSubject full, QString error) {
+            if (!self || self->m_subject.bangumiId != id||generation!=self->m_searchGeneration)
                 return;
-            if (!error.isEmpty() || full.bangumiId != id) {searchWith(m_subject);return;}
-            full.airWeekday = full.airWeekday > 0 ? full.airWeekday : m_subject.airWeekday;
-            m_subject = full;
-            updateHero();
-            searchWith(m_subject);
+            if (!error.isEmpty() || full.bangumiId != id) {self->searchWith(self->m_subject);return;}
+            full.airWeekday = full.airWeekday > 0 ? full.airWeekday : self->m_subject.airWeekday;
+            self->m_subject = full;
+            self->updateHero();
+            self->searchWith(self->m_subject);
         });
     } else {
         searchWith(m_subject);
@@ -429,13 +470,13 @@ void AnimeDetailPage::onBatch(QVector<ResourceResult> results)
     if (relevant.isEmpty())
         return;
     emit resourcesDiscovered(m_subject,relevant);
-    const auto annotated = annotate(relevant);
-    for(const auto &release:annotated) {
-        auto found=std::find_if(m_releases.begin(),m_releases.end(),[&](const Release &prior){
-            return prior.result.rowKey()==release.result.rowKey();
-        });
-        if(found==m_releases.end())m_releases.append(release);
-        else mergeResource(found->result,release.result);
+    QHash<QString,qsizetype> index;
+    for(qsizetype i=0;i<m_releases.size();++i)index.insert(m_releases.at(i).result.rowKey(),i);
+    for(const auto &release:annotate(relevant)) {
+        const QString key=release.result.rowKey();
+        const auto found=index.constFind(key);
+        if(found==index.cend()){index.insert(key,m_releases.size());m_releases.append(release);}
+        else mergeResource(m_releases[found.value()].result,release.result);
     }
     scheduleRender();
 }
@@ -472,6 +513,99 @@ void AnimeDetailPage::scheduleRender()
     m_renderTimer->start();
 }
 
+QWidget *AnimeDetailPage::buildResourceRow(const Release &release, const RowState &state, QWidget *parent)
+{
+    const auto &result = release.result;
+    auto *row = new QFrame(parent);
+    row->setObjectName(QStringLiteral("ResourceRow"));
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(16, 12, 14, 12);
+    rowLayout->setSpacing(14);
+
+    QString episodeText;
+    if (release.isBatch)
+        episodeText = release.episode.isEmpty() || release.episode == QStringLiteral("合集")
+            ? QStringLiteral("合集") : release.episode;
+    else if (!release.episode.isEmpty())
+        episodeText = QStringLiteral("第 %1 话").arg(release.episode);
+    else
+        episodeText = QStringLiteral("—");
+    auto *episode = new QLabel(episodeText, row);
+    episode->setObjectName("EpisodeBadge");
+    episode->setProperty("batch", release.isBatch);
+    episode->setFixedWidth(68);
+    episode->setAlignment(Qt::AlignCenter);
+    rowLayout->addWidget(episode, 0, Qt::AlignTop);
+
+    auto *middle = new QVBoxLayout();
+    middle->setSpacing(6);
+    auto *title = new QLabel(result.title, row);
+    title->setObjectName("ResourceTitle");
+    title->setWordWrap(true);
+    title->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    middle->addWidget(title);
+
+    const auto chips = qualityChips(result.tags);
+    if (!chips.isEmpty()) {
+        auto *chipsBox = new QWidget(row);
+        auto *chipsLayout = new FlowLayout(chipsBox, 4, 4);
+        for (auto *chip : chips)
+            chipsLayout->addWidget(chip);
+        middle->addWidget(chipsBox);
+    }
+
+    QStringList meta;
+    if (result.fileSize > 0) meta << fmtSize(result.fileSize);
+    if (const QString age = fmtAge(result.publishTime); !age.isEmpty()) meta << age;
+    QStringList sites = result.seenOn.isEmpty() ? QStringList{result.siteName} : result.seenOn;
+    sites.removeAll(QString());
+    if (!sites.isEmpty()) meta << sites.join(QStringLiteral(" · "));
+    auto *metaLabel = label(meta.join(QStringLiteral("  ·  ")), QStringLiteral("ResourceSources"), true, row);
+    if (!sites.isEmpty()) metaLabel->setToolTip(QStringLiteral("来源：") + sites.join(QStringLiteral("、")));
+    metaLabel->setVisible(!meta.isEmpty());
+    middle->addWidget(metaLabel);
+    rowLayout->addLayout(middle, 1);
+
+    auto *buttons = new QHBoxLayout();
+    buttons->setSpacing(4);
+    if (!result.sourcePage.isEmpty()) {
+        auto *open = iconButton("external", QStringLiteral("打开发布页"), row);
+        const QString page = result.sourcePage;
+        connect(open, &QPushButton::clicked, this, [page] { QDesktopServices::openUrl(QUrl(page)); });
+        buttons->addWidget(open);
+    }
+    const QString link = result.magnetUri.isEmpty() ? result.torrentUrl : result.magnetUri;
+    if (result.localPath.isEmpty()) {
+        auto *copy = iconButton("copy", result.magnetUri.isEmpty() ? QStringLiteral("复制种子链接") : QStringLiteral("复制磁力链接"), row);
+        copy->setEnabled(!link.isEmpty());
+        connect(copy, &QPushButton::clicked, this, [link] { QGuiApplication::clipboard()->setText(link); });
+        buttons->addWidget(copy);
+    }
+    buttons->addSpacing(4);
+
+    QString text = QStringLiteral("下载");
+    if (state.ready) text = QStringLiteral("播放");
+    else if (state.external) text = QStringLiteral("已发送");
+    else if (state.active) text = QStringLiteral("下载中");
+    auto *action = new QPushButton(text, row);
+    action->setObjectName(state.ready ? QStringLiteral("Primary") : QStringLiteral("Soft"));
+    action->setIcon(state.ready ? Theme::icon("play",&Theme::Palette::accentInk)
+                                : Theme::icon(state.external ? "external" : "download",&Theme::Palette::accentText));
+    action->setMinimumWidth(84);
+    action->setCursor(Qt::PointingHandCursor);
+    if (state.external) action->setToolTip(QStringLiteral("已交给外部下载器，请在该软件中查看任务。"));
+    action->setEnabled(state.ready || (!state.active && !link.isEmpty() && !m_localOnly));
+    const bool ready = state.ready;
+    connect(action, &QPushButton::clicked, this, [this, result, ready] {
+        if (ready) emit playRequested(m_subject, result);
+        else emit downloadRequested(m_subject, result);
+    });
+    buttons->addWidget(action);
+    rowLayout->addLayout(buttons);
+    rowLayout->setAlignment(buttons, Qt::AlignTop);
+    return row;
+}
+
 void AnimeDetailPage::render()
 {
     if (m_subject.bangumiId == 0)
@@ -479,25 +613,45 @@ void AnimeDetailPage::render()
 
     const Filters filter = filters();
     const QString state=m_downloadStatus->currentData().toString();
-    const auto local=m_library->localReleases(m_subject.bangumiId);
+    const int id=m_subject.bangumiId;
+
+    // LocalLibrary lookups hash keys and stat files; resolve each row once per render.
+    QHash<QString,RowState> states;
+    auto stateOf=[&](const ResourceResult &result) {
+        const QString key=result.rowKey()+QLatin1Char('\n')+result.localPath;
+        auto found=states.constFind(key);
+        if(found!=states.cend())return found.value();
+        RowState s;
+        s.ready=m_library->downloaded(id,result);
+        s.external=!s.ready&&m_library->external(id,result);
+        s.active=!s.ready&&m_library->busy(id,result);
+        states.insert(key,s);
+        return s;
+    };
+
+    const auto local=m_library->localReleases(id);
     QVector<Release> pool=(m_localOnly||state=="downloaded")?local:m_releases;
     if(!m_localOnly&&state=="all") {
-        for(const auto &r:local) {
-            bool represented=false;
-            for(const auto &online:m_releases)
-                if(m_library->downloaded(m_subject.bangumiId,online.result)
-                   && m_library->playableFiles(m_subject.bangumiId,online.result).contains(r.result.localPath)) {represented=true;break;}
-            if(!represented)pool.append(r);
-        }
+        QSet<QString> representedFiles;
+        for(const auto &online:m_releases)
+            if(stateOf(online.result).ready)
+                for(const auto &path:m_library->playableFiles(id,online.result))representedFiles.insert(path);
+        for(const auto &r:local)
+            if(!representedFiles.contains(r.result.localPath))pool.append(r);
     }
     QVector<Release> shown;
     for(const auto &release:pool) {
-        const bool downloaded=m_library->downloaded(m_subject.bangumiId,release.result);
-        if(state=="missing"&&downloaded)continue;
+        if(state=="missing"&&stateOf(release.result).ready)continue;
         if(passes(release,filter))shown.append(release);
     }
 
+    QHash<QString,QVector<ResourceResult>> candidates;
+    for(const auto &r:m_releases)
+        if(passes(r,filter))candidates[releaseGroupKey(r.result.releaseGroup)].append(r.result);
+
     const auto groups = groupReleases(shown, sortKey());
+    const int scroll=m_scroll?m_scroll->verticalScrollBar()->value():0;
+    m_groupsBox->setUpdatesEnabled(false);
     clearGroups();
     const int limit = groups.size() < m_groupLimit ? static_cast<int>(groups.size()) : m_groupLimit;
     for (int i = 0; i < limit; ++i) {
@@ -508,30 +662,27 @@ void AnimeDetailPage::render()
         moduleLayout->setContentsMargins(0, 0, 0, 0);
         moduleLayout->setSpacing(0);
 
-        const bool expanded = m_groupExpanded.value(group.name, i < 3);
+        const bool expanded = m_groupExpanded.value(group.name, i < kInitialGroups);
         const bool showAll = m_groupShowAll.value(group.name, false);
-        const QString baseText = QStringLiteral("%1 个资源").arg(group.releases.size());
-        auto *header = new QPushButton(module);
+        auto *header = new QPushButton(groupTitle(group.name, group.releases.size()), module);
         header->setObjectName(QStringLiteral("GroupHeader"));
         header->setCheckable(true);
         header->setChecked(expanded);
         header->setCursor(Qt::PointingHandCursor);
-        header->setText((expanded ? Icons::CHEVRON_DOWN : Icons::CHEVRON_RIGHT) + QStringLiteral("  ")
-                        + group.name + QStringLiteral("   ·   ") + baseText);
+        header->setIcon(Theme::icon(expanded ? "chevron-down" : "chevron-right"));
+        header->setIconSize(QSize(18,18));
         auto *groupBar=new QHBoxLayout;
-        groupBar->setContentsMargins(0,0,12,0);groupBar->setSpacing(8);
+        groupBar->setContentsMargins(0,0,14,0);groupBar->setSpacing(8);
         groupBar->addWidget(header,1);
-        const bool history=m_library->groupHasHistory(m_subject.bangumiId,group.name);
+        const bool history=m_library->groupHasHistory(id,group.name);
         auto *bulk=new QPushButton(history?QStringLiteral("更新"):QStringLiteral("一键下载"),module);
         bulk->setObjectName("GroupDownload");
+        bulk->setIcon(Theme::icon(history?"refresh":"download",&Theme::Palette::accentText));
         bulk->setAccessibleName(group.name+QStringLiteral(" ")+bulk->text());
-        QVector<ResourceResult> candidates;
-        for(const auto &r:m_releases)
-            if(releaseGroupKey(r.result.releaseGroup)==releaseGroupKey(group.name)
-               && passes(r,filter))candidates.append(r.result);
-        bulk->setEnabled(!m_searching&&!candidates.isEmpty()&&group.name!=kUnknownGroup);
+        const auto groupCandidates=candidates.value(releaseGroupKey(group.name));
+        bulk->setEnabled(!m_searching&&!groupCandidates.isEmpty()&&group.name!=kUnknownGroup);
         bulk->setToolTip(m_searching?QStringLiteral("正在检索最新话数…"):QStringLiteral("下载本字幕组缺少的正片，同集只选择一个版本"));
-        connect(bulk,&QPushButton::clicked,this,[this,candidates]{emit groupDownloadRequested(m_subject,candidates);});
+        connect(bulk,&QPushButton::clicked,this,[this,groupCandidates]{emit groupDownloadRequested(m_subject,groupCandidates);});
         groupBar->addWidget(bulk);
         moduleLayout->addLayout(groupBar);
 
@@ -542,128 +693,28 @@ void AnimeDetailPage::render()
         moduleLayout->addWidget(body);
         body->setVisible(expanded);
 
-        connect(header, &QPushButton::toggled, this, [this, header, body, group, baseText](bool on) {
-            m_groupExpanded.insert(group.name, on);
+        connect(header, &QPushButton::toggled, this, [this, header, body, name=group.name](bool on) {
+            m_groupExpanded.insert(name, on);
             body->setVisible(on);
-            header->setText((on ? Icons::CHEVRON_DOWN : Icons::CHEVRON_RIGHT) + QStringLiteral("  ")
-                            + group.name + QStringLiteral("   ·   ") + baseText);
+            header->setIcon(Theme::icon(on ? "chevron-down" : "chevron-right"));
         });
 
-        int visibleCount = 0;
-        QVector<QWidget *> rows;
-        for (const auto &release : group.releases) {
-            const auto &result = release.result;
-            auto *row = new QFrame(body);
-            row->setObjectName(QStringLiteral("ResourceRow"));
-            auto *rowLayout = new QHBoxLayout(row);
-            rowLayout->setContentsMargins(14, 10, 12, 10);
-            rowLayout->setSpacing(14);
+        // Rows beyond the first few are only built once the user asks for them.
+        const int rowCount = showAll ? int(group.releases.size()) : qMin(int(group.releases.size()), kRowsPerGroup);
+        for (int r = 0; r < rowCount; ++r)
+            bodyLayout->addWidget(buildResourceRow(group.releases.at(r), stateOf(group.releases.at(r).result), body));
 
-            QString episodeText;
-            if (release.isBatch)
-                episodeText = release.episode.isEmpty() || release.episode == QStringLiteral("合集")
-                    ? QStringLiteral("合集") : release.episode;
-            else if (!release.episode.isEmpty())
-                episodeText = QStringLiteral("第 %1 话").arg(release.episode);
-            else
-                episodeText = QStringLiteral("—");
-            auto *episode = new QLabel(episodeText, row);
-            episode->setFixedWidth(64);
-            episode->setAlignment(Qt::AlignCenter);
-            const QString bg = release.isBatch ? Theme::ACCENT_SOFT : Theme::SURFACE3;
-            const QString fg = release.isBatch ? Theme::ACCENT_TEXT : Theme::TEXT;
-            episode->setStyleSheet(QStringLiteral("background:%1;color:%2;border-radius:6px;"
-                                                  "padding:5px 0;font-weight:600;font-size:9pt;")
-                                       .arg(bg, fg));
-            rowLayout->addWidget(episode, 0, Qt::AlignTop);
-
-            auto *middle = new QVBoxLayout();
-            middle->setSpacing(4);
-            auto *title = new QLabel(result.title, row);
-            title->setWordWrap(true);
-            title->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            title->setStyleSheet(QStringLiteral("font-size:9.5pt;"));
-            middle->addWidget(title);
-
-            auto *chipsBox = new QWidget(row);
-            auto *chipsLayout = new FlowLayout(nullptr, 4, 4);
-            chipsBox->setLayout(chipsLayout);
-            for (auto *chip : qualityChips(result.tags))
-                chipsLayout->addWidget(chip);
-            middle->addWidget(chipsBox);
-
-            QStringList meta = {fmtSize(result.fileSize), fmtAge(result.publishTime)};
-            const auto sites = result.seenOn.isEmpty() ? QStringList{result.siteName} : result.seenOn;
-            meta << sites.join(QStringLiteral(" · "));
-            auto *metaLabel = label(meta.join(QStringLiteral("   ")), QStringLiteral("Faint"), true, row);
-            metaLabel->setObjectName(QStringLiteral("ResourceSources"));
-            metaLabel->setStyleSheet(QStringLiteral("color:#718785;font-size:9pt;"));
-            metaLabel->setToolTip(QStringLiteral("来源：") + sites.join(QStringLiteral("、")));
-            middle->addWidget(metaLabel);
-            rowLayout->addLayout(middle, 1);
-
-            auto *right = new QVBoxLayout();
-            right->setSpacing(6);
-            right->setAlignment(Qt::AlignTop | Qt::AlignRight);
-            auto *buttons = new QHBoxLayout();
-            buttons->setSpacing(2);
-            if (!result.sourcePage.isEmpty()) {
-                auto *open = new QPushButton(row);
-                open->setIcon(Theme::icon("external"));
-                open->setAccessibleName(QStringLiteral("打开发布页"));
-                open->setObjectName(QStringLiteral("IconButton"));
-                open->setFixedSize(28, 28);
-                open->setToolTip(QStringLiteral("打开发布页"));
-                const QString page = result.sourcePage;
-                connect(open, &QPushButton::clicked, this, [page] { QDesktopServices::openUrl(QUrl(page)); });
-                buttons->addWidget(open);
-            }
-            const QString link = result.magnetUri.isEmpty() ? result.torrentUrl : result.magnetUri;
-            auto *copy = new QPushButton(row);
-            copy->setIcon(Theme::icon("copy"));
-            copy->setAccessibleName(QStringLiteral("复制下载链接"));
-            copy->setObjectName(QStringLiteral("IconButton"));
-            copy->setFixedSize(28, 28);
-            copy->setToolTip(result.magnetUri.isEmpty() ? QStringLiteral("复制种子链接") : QStringLiteral("复制磁力链接"));
-            copy->setEnabled(!link.isEmpty());
-            connect(copy, &QPushButton::clicked, this, [link] {
-                QGuiApplication::clipboard()->setText(link);
-            });
-            copy->setVisible(result.localPath.isEmpty());
-            buttons->addWidget(copy);
-
-            const bool ready=m_library->downloaded(m_subject.bangumiId,result);
-            const bool active=m_library->busy(m_subject.bangumiId,result);
-            const bool external=m_library->external(m_subject.bangumiId,result);
-            auto *download = new QPushButton(ready?QStringLiteral("播放"):(external?QStringLiteral("已发送"):(active?QStringLiteral("下载中"):QStringLiteral("下载"))),row);
-            if(external)download->setToolTip(QStringLiteral("已交给外部下载器，请在该软件中查看任务。"));
-            download->setObjectName(QStringLiteral("Primary"));
-            download->setEnabled(ready||(!active&&!link.isEmpty()&&!m_localOnly));
-            connect(download,&QPushButton::clicked,this,[this,result,ready]{
-                if(ready)emit playRequested(m_subject,result);
-                else emit downloadRequested(m_subject,result);
-            });
-            buttons->addWidget(download);
-            right->addLayout(buttons);
-            rowLayout->addLayout(right);
-
-            bodyLayout->addWidget(row);
-            rows.push_back(row);
-            row->setVisible(visibleCount < 6 || showAll);
-            ++visibleCount;
-        }
-
-        if (group.releases.size() > 6) {
+        if (group.releases.size() > kRowsPerGroup) {
+            const int hidden = int(group.releases.size()) - kRowsPerGroup;
             auto *more = new QPushButton(showAll ? QStringLiteral("收起")
-                : QStringLiteral("显示其余 %1 个资源").arg(group.releases.size() - 6), body);
+                : QStringLiteral("显示其余 %1 个资源").arg(hidden), body);
             more->setObjectName(QStringLiteral("Ghost"));
+            more->setIcon(Theme::icon(showAll ? "chevron-up" : "chevron-down"));
+            more->ensurePolished(); more->setFixedHeight(40);
             bodyLayout->addWidget(more);
-            connect(more, &QPushButton::clicked, this, [this, rows, more, key=group.name] {
-                const bool anyHidden = !m_groupShowAll.value(key, false);
-                m_groupShowAll.insert(key, anyHidden);
-                for (int j = 6; j < rows.size(); ++j)
-                    rows.at(j)->setVisible(anyHidden);
-                more->setText(anyHidden ? QStringLiteral("收起") : QStringLiteral("显示其余 %1 个资源").arg(rows.size() - 6));
+            connect(more, &QPushButton::clicked, this, [this, key=group.name] {
+                m_groupShowAll.insert(key, !m_groupShowAll.value(key, false));
+                render();
             });
         }
         m_groupsLayout->addWidget(module);
@@ -672,13 +723,17 @@ void AnimeDetailPage::render()
     if (groups.size() > limit) {
         auto *moreGroups = new QPushButton(
             QStringLiteral("显示更多发布组（剩余 %1 个）").arg(groups.size() - limit), m_groupsBox);
-        moreGroups->setObjectName(QStringLiteral("Ghost"));
+        moreGroups->setObjectName(QStringLiteral("Soft"));
+        moreGroups->setIcon(Theme::icon("chevron-down",&Theme::Palette::accentText));
+        moreGroups->ensurePolished(); moreGroups->setFixedHeight(42);
         connect(moreGroups, &QPushButton::clicked, this, [this] {
             m_groupLimit = std::numeric_limits<int>::max();
             render();
         });
         m_groupsLayout->addWidget(moreGroups);
     }
+    m_groupsBox->setUpdatesEnabled(true);
+    if(m_scroll)m_scroll->verticalScrollBar()->setValue(scroll);
 
     m_countLabel->setText(QStringLiteral("%1 个资源 · %2 个发布组").arg(shown.size()).arg(groups.size())
                           + (!m_localOnly && state=="all" && shown.size() != m_releases.size()
@@ -687,16 +742,16 @@ void AnimeDetailPage::render()
     if (!groups.isEmpty()) {
         m_empty->hide();
     } else if(m_localOnly) {
-        m_empty->setText(QStringLiteral("还没有下载完成的视频"),QStringLiteral("下载完成的视频会按字幕组显示在这里。"));m_empty->show();
+        m_empty->setText(QStringLiteral("还没有下载完成的视频"),QStringLiteral("下载完成的视频会按字幕组显示在这里。点击右上角「查找可下载资源」开始下载。"));m_empty->show();
     } else if(m_searching&&m_releases.isEmpty()) {
         m_empty->setText(QStringLiteral("正在搜索资源…"),QStringLiteral("正在获取各字幕组已发布的话数。"));m_empty->show();
     } else if (m_releases.isEmpty()) {
         m_empty->setText(QStringLiteral("没有找到资源"),
-                         QStringLiteral("各资源站均未返回与本作匹配的结果。可在「站点管理」检查站点状态。"));
+                         QStringLiteral("各资源站均未返回与本作匹配的结果。可在「资源站点」检查站点状态。"));
         m_empty->show();
     } else {
         m_empty->setText(QStringLiteral("没有符合筛选条件的资源"),
-                         QStringLiteral("试试放宽画质或字幕条件。"));
+                         QStringLiteral("试试放宽画质或字幕条件，或点击「重置筛选」。"));
         m_empty->show();
     }
 }
@@ -749,12 +804,12 @@ void AnimeDetailPage::setSeasons(const QVector<int> &seasons)
 {
     QSignalBlocker blocker(m_season);
     m_season->clear();
-    m_season->addItem(QStringLiteral("全部"), -1);
+    m_season->addItem(QStringLiteral("全部季度"), -1);
     for (int season : seasons)
         m_season->addItem(QStringLiteral("第 %1 季").arg(season), season);
     const int preferred=m_season->findData(LocalLibrary::subjectSeason(m_subject));
     m_season->setCurrentIndex(preferred<0?0:preferred);
-    m_season->setVisible(!seasons.isEmpty());
+    m_season->setEnabled(!seasons.isEmpty());
 }
 
 void AnimeDetailPage::cancel()

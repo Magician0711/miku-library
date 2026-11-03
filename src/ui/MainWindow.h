@@ -3,6 +3,7 @@
 #include "core/Models.h"
 
 #include "FramelessWindow.h"
+#include "Theme.h"
 #include <QSet>
 #include <QVector>
 
@@ -26,6 +27,9 @@ class AnimeDetailPage;
 class QStackedWidget;
 class QPushButton;
 class QLabel;
+class QTimer;
+class QToolButton;
+class StatusDot;
 
 class MainWindow : public FramelessWindow {
     Q_OBJECT
@@ -39,6 +43,9 @@ public:
     void handleArguments(const QStringList &arguments);
 
 private:
+    static constexpr int kSearchPage = 1;
+    static constexpr int kDownloadsPage = 3;
+    static constexpr int kSettingsPage = 5;
     void buildUi();
     void openAnime(const AnimeSubject &subject, bool localOnly=false);
     void closeDetail();
@@ -46,6 +53,9 @@ private:
     void onDownloadRequested(const AnimeSubject &subject,const ResourceResult &result);
     void selectPage(int index);
     void setEngineStatus(const QString &text);
+    void updateDownloadBadge();
+    void setAppearance(Theme::Mode mode);
+    void updateThemeButton();
     void showDownloaderMenu(QWidget *anchor);
     void updateDownloader();
     void importCatalog();
@@ -63,6 +73,10 @@ private:
     QStackedWidget *m_stack;
     QVector<QPushButton *> m_navButtons;
     QLabel *m_engineStatus;
+    StatusDot *m_engineDot;
+    QLabel *m_downloadBadge;
+    QTimer *m_badgeTimer;
+    QToolButton *m_themeButton;
 
     HomePage *m_home;
     SearchPage *m_search;

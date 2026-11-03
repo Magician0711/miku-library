@@ -11,6 +11,8 @@ public:
     explicit FramelessWindow(QWidget *parent = nullptr);
     QWidget *titleBar() const { return m_titleBar; }
     void setContextTitle(const QString &title);
+    // Places a control in the title bar, just left of the window buttons.
+    void addTitleWidget(QWidget *widget);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -20,9 +22,12 @@ protected:
 
 private:
     void toggleMaximized();
+    void applyThemeToChrome();
     void updateControls();
     bool isDragArea(const QPoint &position) const;
     QWidget *m_titleBar;
     QLabel *m_context;
+    QToolButton *m_minimize;
     QToolButton *m_maximize;
+    QToolButton *m_close;
 };
