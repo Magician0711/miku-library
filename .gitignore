@@ -1,0 +1,16 @@
+/build/
+/dist/
+/.vs/
+/.idea/
+/.anime-nexus/
+/release_packages/
+/archives/
+__pycache__/
+*.py[cod]
+*.user
+*.log
+*.zip
+*.exe
+*.dll
+*.pdb
+*.obj

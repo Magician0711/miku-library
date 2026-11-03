@@ -1,0 +1,1741 @@
+{
+  "schema_version": "1.0.0",
+  "title": "番剧下载与字幕组资源目录",
+  "updated_on": "2026-10-28",
+  "timezone": "Asia/Tokyo",
+  "scope": "以引用对话的番剧种子站为核心，补充发布组、私人 PT、直链／字幕社区和历史资源。不是全网穷尽列表或实时可用性保证。",
+  "counts": {
+    "site_records": 47,
+    "main_sites": 33,
+    "supplementary_sites": 10,
+    "historical_sites": 4,
+    "group_pages": 43,
+    "total_entries": 90
+  },
+  "notes": [
+    "标准 JSON 的说明使用每项最后的 comment 字段；配套 JSONC 在每个对象结束后附 // 注释。",
+    "网站记录与第三方字幕组筛选页分别统计；相关域名合并保存，不用镜像或组页面虚增独立网站数量。",
+    "核对来自本次网页读取、搜索索引和公开公告；未登录私人站点，也未测试任何具体文件、种子健康度或下载速度。",
+    "fetch_failed 仅表示本次工具未取得正文，不等于网站下线；content_seen 也不保证你的网络能够访问或全部链接有效。",
+    "supplementary_sites 中包含非 BT 服务和待核实的新项目；historical_sites 不适合直接当作持续更新源。",
+    "这是通用站点目录，非某款下载器可直接导入的适配器配置；RSS 仅记录是否已有证据，未猜测 API、搜索模板或订阅地址。",
+    "language 表示主要字幕／资源面向语言而非固定音轨语言：zh 为中文，en 为英文，es 为西班牙文，multi 为多语或须逐项确认。",
+    "rss 为 null 表示本次未核实，不表示不支持。"
+  ],
+  "field_definitions": {
+    "id": "文件内稳定且唯一的标识",
+    "name": "站点或发布组名称",
+    "url": "网站入口或第三方资源筛选页",
+    "related_urls": "合并保存的相关或历史入口；不保证可用或可互换",
+    "category": "public 公开，private 私人 PT，community 会员社区，supplementary 补充，historical 历史或服务缩减",
+    "kind": "具体网站用途，组页固定为 third_party_group_index",
+    "access": "访问模式概述，具体权限以网站要求为准",
+    "language": "主要资源面向语言；不保证每项资源一致",
+    "rss": "true 有公开证据支持；false 已有停用公告；null 未核实",
+    "verification": "本次核对日期、结果和限制",
+    "sources": "支持站点说明、入口或公告的来源 URL；抓取失败的入口本身不能单独证明当前运营",
+    "comment": "本站／此入口以什么资源为主",
+    "parent_site_id": "组筛选页所属目录站点"
+  },
+  "anime_torrent_sites": [
+    {
+      "id": "nyaa",
+      "name": "Nyaa",
+      "url": "https://nyaa.si/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次抓取失败；未判断为关闭。"
+      },
+      "sources": [
+        "https://nyaa.si/",
+        "https://wotaku.wiki/torrenting/trackers"
+      ],
+      "comment": "国际综合动画 BT 索引，以日语动画、英文字幕版、RAW、BDRip、全集合集为主，也有音乐与漫画。"
+    },
+    {
+      "id": "dmhy",
+      "name": "动漫花园",
+      "url": "https://share.dmhy.org/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取分类与资源列表。"
+      },
+      "sources": [
+        "https://share.dmhy.org/"
+      ],
+      "comment": "以中文字幕组的新番、完结合集、剧场版和 OVA 为主，兼有 RAW、动漫音乐、漫画和特摄。"
+    },
+    {
+      "id": "mikan",
+      "name": "蜜柑计划",
+      "url": "https://mikanani.me/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": true,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取番剧列表及字幕组订阅入口。"
+      },
+      "sources": [
+        "https://mikanani.me/"
+      ],
+      "comment": "以按季度、星期和字幕组整理的中文字幕番剧为主，适合查新番和订阅更新。"
+    },
+    {
+      "id": "acgrip",
+      "name": "ACG.RIP",
+      "url": "https://acg.rip/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "页面可读，但站方说明自身 Tracker 已失效；不能将站内索引与 Tracker 状态混为一谈。"
+      },
+      "sources": [
+        "https://acg.rip/"
+      ],
+      "comment": "以中文动画新番、字幕组发布、WebRip 与完结合集为主。"
+    },
+    {
+      "id": "tokyotosho",
+      "name": "Tokyo Toshokan",
+      "url": "https://www.tokyotosho.info/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次返回 403；资源列表未核实。"
+      },
+      "sources": [
+        "https://www.tokyotosho.info/",
+        "https://wotaku.wiki/torrenting/trackers"
+      ],
+      "comment": "以日本动画及日系媒体种子索引为主，覆盖字幕动画、RAW、音乐等发布。"
+    },
+    {
+      "id": "bangumimoe",
+      "name": "萌番组",
+      "url": "https://bangumi.moe/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "shell_only",
+        "note": "只读取到动态页面框架，未核实当前资源列表。"
+      },
+      "sources": [
+        "https://bangumi.moe/",
+        "https://acgnavi.net/"
+      ],
+      "comment": "以中文动画与字幕组发布资源的标签检索、聚合为主。"
+    },
+    {
+      "id": "anirena",
+      "name": "AniRena",
+      "url": "https://www.anirena.com/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取资源列表与官方指南。"
+      },
+      "sources": [
+        "https://www.anirena.com/",
+        "https://www.anirena.com/guide"
+      ],
+      "comment": "以动画、RAW、多语言字幕版为主，同时收录漫画、音频及其他日系媒体；不是仅有番剧的站点。"
+    },
+    {
+      "id": "acgnx",
+      "name": "ACGNX／末日动漫资源库",
+      "url": "https://share.acgnx.se/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次 .se 域名返回 403，.net 入口也未取得正文；合并记录相关域名，不计作多个独立站点。"
+      },
+      "sources": [
+        "https://share.acgnx.se/",
+        "https://acgnavi.net/"
+      ],
+      "comment": "以中文动画新番、字幕组种子和 ACG 资源索引为主。",
+      "related_urls": [
+        "https://www.acgnx.se/",
+        "https://share.acgnx.net/"
+      ]
+    },
+    {
+      "id": "anidex",
+      "name": "AniDex",
+      "url": "https://anidex.info/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次未取得页面；当前运营和更新情况待核实。"
+      },
+      "sources": [
+        "https://anidex.info/",
+        "https://torrends.to/sites/anime/"
+      ],
+      "comment": "动画及字幕组作品的 BT 索引，历史上覆盖多语言字幕动画及相关 ACG 资源。"
+    },
+    {
+      "id": "shana",
+      "name": "Shana Project",
+      "url": "https://www.shanaproject.com/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": true,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取资源列表、Follow 和 RSS 入口。"
+      },
+      "sources": [
+        "https://www.shanaproject.com/"
+      ],
+      "comment": "以英文字幕新番及发布组更新索引为主，提供追踪作品、发布组和 RSS 的功能。"
+    },
+    {
+      "id": "kisssub",
+      "name": "爱恋动漫／漫猫入口",
+      "url": "https://www.kisssub.org/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次两个入口均未取得正文；漫猫按关联备用入口合并保存，未验证当前镜像关系。"
+      },
+      "sources": [
+        "https://www.kisssub.org/",
+        "https://fuliba2023.net/kisssub.html"
+      ],
+      "comment": "以中文字幕新番、字幕组合集和 RAW 为主，兼有漫画、音乐等 ACG 资源。",
+      "related_urls": [
+        "https://www.comicat.org/"
+      ]
+    },
+    {
+      "id": "animegarden",
+      "name": "Anime Garden",
+      "url": "https://www.animes.garden/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": true,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "第三方聚合站；不是动漫花园官方站。已读取列表和字幕组筛选页。"
+      },
+      "sources": [
+        "https://www.animes.garden/"
+      ],
+      "comment": "以动漫花园等来源的中文动画资源聚合、季度番表、字幕组筛选与 RSS 为主。"
+    },
+    {
+      "id": "acgsou",
+      "name": "ACG搜",
+      "url": "https://www.acgsou.com/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次超时，网站现状及资源列表未核实。"
+      },
+      "sources": [
+        "https://www.acgsou.com/",
+        "https://acgsou.com.clearwebstats.com/"
+      ],
+      "comment": "中文 ACG 资源搜索与种子索引，历史用途以动画新番、字幕组资源和合集检索为主。"
+    },
+    {
+      "id": "nekobt",
+      "name": "nekoBT",
+      "url": "https://nekobt.to/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取列表及公开磁链、公开／私人种子界面；部分功能可能需要账号。"
+      },
+      "sources": [
+        "https://nekobt.to/"
+      ],
+      "comment": "以动画种子、多语言字幕、RAW、WEB 与合集为主，可按音轨、字幕和发布组筛选。"
+    },
+    {
+      "id": "fitacg",
+      "name": "菲特动漫",
+      "url": "https://fitacg.com/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取首页及动画资源详情页。"
+      },
+      "sources": [
+        "https://fitacg.com/",
+        "https://fitacg.com/topic/316433"
+      ],
+      "comment": "以中文新番、字幕组动画和资源检索为主，提供种子与磁链入口，兼有漫画等二次元内容。"
+    },
+    {
+      "id": "36dm",
+      "name": "简单动漫",
+      "url": "https://36dm.club/",
+      "category": "public",
+      "kind": "public_index",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "目录仍收录此地址，但本次未取得正文；域名和当前内容待核实。"
+      },
+      "sources": [
+        "https://36dm.club/",
+        "https://acgnavi.net/"
+      ],
+      "comment": "中文动漫资源下载与发布入口，主要用于查找番剧及相关动画资源。"
+    },
+    {
+      "id": "subsplease",
+      "name": "SubsPlease",
+      "url": "https://subsplease.org/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "shell_only",
+        "note": "首页可读但资源区动态加载；本次未直接核实下载列表，Shana Project 可见该组发布。"
+      },
+      "sources": [
+        "https://subsplease.org/",
+        "https://www.shanaproject.com/",
+        "https://subsplease.org/2020/11/28/hello-world/"
+      ],
+      "comment": "以英文字幕当季新番的网络片源发布为主，主要用于按作品查单集及合集。"
+    },
+    {
+      "id": "erairaws",
+      "name": "Erai-raws",
+      "url": "https://www.erai-raws.info/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次出现 502／超时；Shana Project 可见该组发布，独立站功能未核实。"
+      },
+      "sources": [
+        "https://www.erai-raws.info/",
+        "https://www.shanaproject.com/"
+      ],
+      "comment": "以新番网络片源和多语言字幕版本为主；名称含 Raws 不代表每个发布都没有字幕。"
+    },
+    {
+      "id": "vcb",
+      "name": "VCB-Studio",
+      "url": "https://vcb-s.com/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "multi",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次主页返回 403；另有可读取的第三方组资源页。"
+      },
+      "sources": [
+        "https://vcb-s.com/",
+        "https://www.animes.garden/resources/1?fansub=VCB-Studio"
+      ],
+      "comment": "以动画蓝光压制 BDRip、全集整理和相关音轨、特典为主；是否含中文字幕需逐个项目确认。"
+    },
+    {
+      "id": "hysub",
+      "name": "幻樱字幕组",
+      "url": "https://hysub.net/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次官网未取得正文；另有可读取的第三方组资源页。"
+      },
+      "sources": [
+        "https://hysub.net/",
+        "https://www.animes.garden/resources/1?fansub=%E5%B9%BB%E6%A8%B1%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕日本动画新番、完结作品及剧场版发布为主。"
+    },
+    {
+      "id": "kamigami",
+      "name": "诸神字幕组",
+      "url": "https://subs.kamigami.org/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "zh",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取官方分类与发布；站方说明部分作品下载链接已移除。"
+      },
+      "sources": [
+        "https://subs.kamigami.org/"
+      ],
+      "comment": "以中日双语动画字幕、番剧和 BDRip 为主，兼有日剧与纪录片；部分作品提供假名标注字幕。"
+    },
+    {
+      "id": "doki",
+      "name": "Doki Fansubs",
+      "url": "https://doki.co/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "官网提供 Tracker、XDCC、字幕存档入口；未逐一验证旧资源。"
+      },
+      "sources": [
+        "https://doki.co/"
+      ],
+      "comment": "以英文字幕动画、蓝光版和完结作品发布为主，另有漫画与视觉小说项目。"
+    },
+    {
+      "id": "commie",
+      "name": "Commie Subs",
+      "url": "https://commiesubs.com/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取带外部 Torrent 链接的发布文章。"
+      },
+      "sources": [
+        "https://commiesubs.com/"
+      ],
+      "comment": "以英文字幕动画、自制字幕修订版、单集与合集发布为主。"
+    },
+    {
+      "id": "chihiro",
+      "name": "Chihiro-Fansubs",
+      "url": "https://chihiro-subs.com/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取官网发布与下载导航。"
+      },
+      "sources": [
+        "https://chihiro-subs.com/"
+      ],
+      "comment": "以英文字幕动画及该组完成作品为主，提供项目列表、种子和 XDCC 入口。"
+    },
+    {
+      "id": "saizen",
+      "name": "Saizen Fansubs",
+      "url": "https://www.saizenfansubs.com/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取 Yawara 等合集及发布文章；不等同于全面追当季新番。"
+      },
+      "sources": [
+        "https://www.saizenfansubs.com/"
+      ],
+      "comment": "以经典动画、老番和长篇作品的英文字幕补完为主，包含 DVD、蓝光整理版。"
+    },
+    {
+      "id": "liveevil",
+      "name": "Live-eviL",
+      "url": "https://www.live-evil.org/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次超时；合作组 Saizen 官方页面仍链接并介绍其作品目录。"
+      },
+      "sources": [
+        "https://www.live-evil.org/",
+        "https://www.saizenfansubs.com/"
+      ],
+      "comment": "以经典、冷门动画和老番的英文字幕翻译、补完项目为主。"
+    },
+    {
+      "id": "damedesuyo",
+      "name": "DameDesuYo",
+      "url": "https://damedesuyo.com/",
+      "category": "public",
+      "kind": "release_group",
+      "language": "en",
+      "access": "public_or_optional_account",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次超时；Chihiro 官网友情链接可确认该组地址，当前发布列表未核实。"
+      },
+      "sources": [
+        "https://damedesuyo.com/",
+        "https://chihiro-subs.com/"
+      ],
+      "comment": "以英文字幕动画项目和发布组修订版本为主。"
+    },
+    {
+      "id": "bakabt",
+      "name": "BakaBT",
+      "url": "https://bakabt.me/",
+      "category": "private",
+      "kind": "private_tracker",
+      "language": "multi",
+      "access": "account_required",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "login_only",
+        "note": "仅核实登录页；未登录检查库内资源，也未核实当前入站方式。"
+      },
+      "sources": [
+        "https://bakabt.me/",
+        "https://bttrackers.com/category/anime"
+      ],
+      "comment": "以经过整理的完结动画、老番合集及相关 ACG 收藏资源为主，英文字幕资源较常见。"
+    },
+    {
+      "id": "animebytes",
+      "name": "AnimeBytes",
+      "url": "https://animebytes.tv/",
+      "category": "private",
+      "kind": "private_tracker",
+      "language": "multi",
+      "access": "account_required",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "login_only",
+        "note": "仅核实入口和登录导航；资源规模及当前邀请政策未登录核实。"
+      },
+      "sources": [
+        "https://animebytes.tv/",
+        "https://bttrackers.com/category/anime"
+      ],
+      "comment": "以动画、蓝光版本、RAW、字幕版及其他日系收藏资源为主的私人 PT 社区。"
+    },
+    {
+      "id": "u2",
+      "name": "U2 动漫花园 PT",
+      "url": "https://u2.dmhy.org/",
+      "category": "private",
+      "kind": "private_tracker",
+      "language": "multi",
+      "access": "account_required",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "login_only",
+        "note": "可见账号、两步验证和邀请码入口；未登录查看资源。"
+      },
+      "sources": [
+        "https://u2.dmhy.org/",
+        "https://www.reddit.com/r/trackers/comments/1tduswb/best_anime_trackers/"
+      ],
+      "comment": "以动画原盘 BDMV、DVDISO、原始片源和收藏向 ACG 资源为主；原盘不保证附中文字幕。"
+    },
+    {
+      "id": "animez",
+      "name": "AnimeZ／AnimeTorrents",
+      "url": "https://animez.to/",
+      "category": "private",
+      "kind": "private_tracker",
+      "language": "en",
+      "access": "account_required",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "login_only",
+        "note": "原 animetorrents.me 页面直接指向 AnimeZ；注册页标注为邀请制社区，未核实库内资源。"
+      },
+      "sources": [
+        "https://animez.to/",
+        "https://animetorrents.me/",
+        "https://animez.to/register",
+        "https://www.reddit.com/r/trackers/comments/omh9d8"
+      ],
+      "comment": "以动画剧集、合集和英文字幕／配音版本为主的会员制资源社区。",
+      "related_urls": [
+        "https://animetorrents.me/"
+      ]
+    },
+    {
+      "id": "skyeysnow",
+      "name": "天雪／SkyeySnow",
+      "url": "https://skyeysnow.com/",
+      "category": "private",
+      "kind": "private_tracker",
+      "language": "multi",
+      "access": "account_required",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "maintenance_notice",
+        "note": "本次首页只显示正在更新 PHP；维护结束时间和库内资源未知。"
+      },
+      "sources": [
+        "https://skyeysnow.com/",
+        "https://bttrackers.com/category/anime"
+      ],
+      "comment": "以动漫及 ACG 收藏资源为主的私人 PT 站，主要用途是片源与合集收藏。"
+    },
+    {
+      "id": "unionfansub",
+      "name": "Unión Fansub",
+      "url": "https://foro.unionfansub.com/",
+      "category": "community",
+      "kind": "torrent_community",
+      "language": "es",
+      "access": "mixed",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "可见动画目录、Torrent 入口与直链帖子；参与论坛需要注册，下载权限依页面规则。"
+      },
+      "sources": [
+        "https://foro.unionfansub.com/"
+      ],
+      "comment": "以西班牙语字幕／配音动画、完结作品和收藏版为主，也有漫画、音乐及日剧。"
+    }
+  ],
+  "fansub_release_pages": [
+    {
+      "id": "group_lolihouse",
+      "name": "LoliHouse",
+      "url": "https://www.animes.garden/resources/1?fansub=LoliHouse",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=LoliHouse"
+      ],
+      "comment": "以 WebRip／HEVC 10-bit 动画压制和字幕组合作版为主，常见简繁中文内封字幕。"
+    },
+    {
+      "id": "group_nekomoe",
+      "name": "喵萌奶茶屋",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%96%B5%E8%90%8C%E5%A5%B6%E8%8C%B6%E5%B1%8B",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%96%B5%E8%90%8C%E5%A5%B6%E8%8C%B6%E5%B1%8B"
+      ],
+      "comment": "以当季新番的中文字幕和中日双语版本为主。"
+    },
+    {
+      "id": "group_kitauji",
+      "name": "北宇治字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%8C%97%E5%AE%87%E6%B2%BB%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%8C%97%E5%AE%87%E6%B2%BB%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以该组制作的中文字幕动画、单集发布及系列作品为主。"
+    },
+    {
+      "id": "group_sweetsub",
+      "name": "SweetSub",
+      "url": "https://www.animes.garden/resources/1?fansub=SweetSub",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=SweetSub"
+      ],
+      "comment": "以该组制作的中文字幕动画与作品发布为主。"
+    },
+    {
+      "id": "group_ank",
+      "name": "千夏字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%8D%83%E5%A4%8F%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%8D%83%E5%A4%8F%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画、系列番剧及合作发布为主。"
+    },
+    {
+      "id": "group_dmguo",
+      "name": "动漫国字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%8A%A8%E6%BC%AB%E5%9B%BD%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%8A%A8%E6%BC%AB%E5%9B%BD%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕新番、完结番及该组动画发布为主。"
+    },
+    {
+      "id": "group_hysub",
+      "name": "幻樱字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%B9%BB%E6%A8%B1%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%B9%BB%E6%A8%B1%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕新番、剧场版及完结动画发布为主。"
+    },
+    {
+      "id": "group_uhawing",
+      "name": "悠哈璃羽字幕社",
+      "url": "https://www.animes.garden/resources/1?fansub=%E6%82%A0%E5%93%88%E7%92%83%E7%BE%BD%E5%AD%97%E5%B9%95%E7%A4%BE",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E6%82%A0%E5%93%88%E7%92%83%E7%BE%BD%E5%AD%97%E5%B9%95%E7%A4%BE"
+      ],
+      "comment": "以中文字幕动画与该组合作发布作品为主。"
+    },
+    {
+      "id": "group_ani",
+      "name": "ANi",
+      "url": "https://www.animes.garden/resources/1?fansub=ANi",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=ANi"
+      ],
+      "comment": "以繁体中文字幕新番 WEB-DL 为主，可见 Baha 来源及 MP4 发布。"
+    },
+    {
+      "id": "group_nixraws",
+      "name": "Nix-Raws",
+      "url": "https://www.animes.garden/resources/1?fansub=Nix-Raws",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=Nix-Raws"
+      ],
+      "comment": "以动画片源发布为主，字幕、音轨和编码规格需查看各资源标题。"
+    },
+    {
+      "id": "group_prejudice",
+      "name": "Prejudice-Studio",
+      "url": "https://www.animes.garden/resources/1?fansub=Prejudice-Studio",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=Prejudice-Studio"
+      ],
+      "comment": "以该组发布的动画片源与压制版本为主，具体字幕配置依作品而异。"
+    },
+    {
+      "id": "group_greentea",
+      "name": "绿茶字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E7%BB%BF%E8%8C%B6%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E7%BB%BF%E8%8C%B6%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画与该组系列作品发布为主。"
+    },
+    {
+      "id": "group_flsnow",
+      "name": "雪飄工作室",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%9B%AA%E9%A3%84%E5%B7%A5%E4%BD%9C%E5%AE%A4",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%9B%AA%E9%A3%84%E5%B7%A5%E4%BD%9C%E5%AE%A4"
+      ],
+      "comment": "以中文字幕动画及该组长期项目发布为主。"
+    },
+    {
+      "id": "group_sandwich",
+      "name": "三明治摆烂组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E4%B8%89%E6%98%8E%E6%B2%BB%E6%91%86%E7%83%82%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E4%B8%89%E6%98%8E%E6%B2%BB%E6%91%86%E7%83%82%E7%BB%84"
+      ],
+      "comment": "以中文字幕新番及合作发布版本为主。"
+    },
+    {
+      "id": "group_makari",
+      "name": "魔星字幕团",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%AD%94%E6%98%9F%E5%AD%97%E5%B9%95%E5%9B%A2",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%AD%94%E6%98%9F%E5%AD%97%E5%B9%95%E5%9B%A2"
+      ],
+      "comment": "以中文字幕动画及该团制作的系列作品为主。"
+    },
+    {
+      "id": "group_boxue",
+      "name": "拨雪寻春",
+      "url": "https://www.animes.garden/resources/1?fansub=%E6%8B%A8%E9%9B%AA%E5%AF%BB%E6%98%A5",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E6%8B%A8%E9%9B%AA%E5%AF%BB%E6%98%A5"
+      ],
+      "comment": "以该组翻译、制作的中文字幕动画发布为主。"
+    },
+    {
+      "id": "group_kisssub",
+      "name": "爱恋字幕社",
+      "url": "https://www.animes.garden/resources/1?fansub=%E7%88%B1%E6%81%8B%E5%AD%97%E5%B9%95%E7%A4%BE",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E7%88%B1%E6%81%8B%E5%AD%97%E5%B9%95%E7%A4%BE"
+      ],
+      "comment": "以中文字幕新番、合作字幕版本及番剧发布为主。"
+    },
+    {
+      "id": "group_cherry",
+      "name": "樱桃花字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E6%A8%B1%E6%A1%83%E8%8A%B1%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E6%A8%B1%E6%A1%83%E8%8A%B1%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画和该组系列发布为主。"
+    },
+    {
+      "id": "group_skymoon",
+      "name": "天月動漫發佈組",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%A4%A9%E6%9C%88%E5%8B%95%E6%BC%AB%E7%99%BC%E4%BD%88%E7%B5%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%A4%A9%E6%9C%88%E5%8B%95%E6%BC%AB%E7%99%BC%E4%BD%88%E7%B5%84"
+      ],
+      "comment": "以动画片源转载、整理与发布为主，字幕语言和来源按资源标题确认。"
+    },
+    {
+      "id": "group_orion",
+      "name": "猎户发布组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E7%8C%8E%E6%88%B7%E5%8F%91%E5%B8%83%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E7%8C%8E%E6%88%B7%E5%8F%91%E5%B8%83%E7%BB%84"
+      ],
+      "comment": "以动画片源及番剧整理发布为主，具体字幕与编码按资源标题确认。"
+    },
+    {
+      "id": "group_sixfour",
+      "name": "六四位元字幕組",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%85%AD%E5%9B%9B%E4%BD%8D%E5%85%83%E5%AD%97%E5%B9%95%E7%B5%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%85%AD%E5%9B%9B%E4%BD%8D%E5%85%83%E5%AD%97%E5%B9%95%E7%B5%84"
+      ],
+      "comment": "以中文字幕动画及该组作品发布为主。"
+    },
+    {
+      "id": "group_dbd",
+      "name": "DBD制作组",
+      "url": "https://www.animes.garden/resources/1?fansub=DBD%E5%88%B6%E4%BD%9C%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=DBD%E5%88%B6%E4%BD%9C%E7%BB%84"
+      ],
+      "comment": "以动画整理和制作组发布版本为主，片源、画质与字幕以单项说明为准。"
+    },
+    {
+      "id": "group_tsdm",
+      "name": "TSDM字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=TSDM%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=TSDM%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以天使动漫相关字幕组制作的中文字幕动画为主。"
+    },
+    {
+      "id": "group_gmteam",
+      "name": "GMTeam",
+      "url": "https://www.animes.garden/resources/1?fansub=GMTeam",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=GMTeam"
+      ],
+      "comment": "以该团队的动画资源发布为主，原声语言、字幕和版本按标题核实。"
+    },
+    {
+      "id": "group_silverbullet",
+      "name": "银色子弹字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%93%B6%E8%89%B2%E5%AD%90%E5%BC%B9%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%93%B6%E8%89%B2%E5%AD%90%E5%BC%B9%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以《名侦探柯南》动画及相关项目的中文字幕、中日双语版本为主。"
+    },
+    {
+      "id": "group_vcb",
+      "name": "VCB-Studio",
+      "url": "https://www.animes.garden/resources/1?fansub=VCB-Studio",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=VCB-Studio"
+      ],
+      "comment": "以蓝光 BDRip、动画全集压制和收藏版发布为主，字幕配置按项目确认。"
+    },
+    {
+      "id": "group_nightingale",
+      "name": "夜莺家族",
+      "url": "https://www.animes.garden/resources/1?fansub=%E5%A4%9C%E8%8E%BA%E5%AE%B6%E6%97%8F",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E5%A4%9C%E8%8E%BA%E5%AE%B6%E6%97%8F"
+      ],
+      "comment": "以该组的中文动画字幕与系列作品发布为主。"
+    },
+    {
+      "id": "group_yiciyan",
+      "name": "亿次研同好会",
+      "url": "https://www.animes.garden/resources/1?fansub=%E4%BA%BF%E6%AC%A1%E7%A0%94%E5%90%8C%E5%A5%BD%E4%BC%9A",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E4%BA%BF%E6%AC%A1%E7%A0%94%E5%90%8C%E5%A5%BD%E4%BC%9A"
+      ],
+      "comment": "以同好会发布的动画字幕作品与系列资源为主。"
+    },
+    {
+      "id": "group_maruko",
+      "name": "丸子家族",
+      "url": "https://www.animes.garden/resources/1?fansub=%E4%B8%B8%E5%AD%90%E5%AE%B6%E6%97%8F",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E4%B8%B8%E5%AD%90%E5%AE%B6%E6%97%8F"
+      ],
+      "comment": "以《樱桃小丸子》等系列的简繁中文字幕动画发布为主。"
+    },
+    {
+      "id": "group_wind",
+      "name": "风之圣殿",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%A3%8E%E4%B9%8B%E5%9C%A3%E6%AE%BF",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%A3%8E%E4%B9%8B%E5%9C%A3%E6%AE%BF"
+      ],
+      "comment": "以中文字幕动画及该组的番剧作品发布为主。"
+    },
+    {
+      "id": "group_yunguang",
+      "name": "云光字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E4%BA%91%E5%85%89%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E4%BA%91%E5%85%89%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画单集、系列作品与相关合集发布为主。"
+    },
+    {
+      "id": "group_blackwhite",
+      "name": "黑白字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%BB%91%E7%99%BD%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%BB%91%E7%99%BD%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画及该组字幕作品为主。"
+    },
+    {
+      "id": "group_tamers",
+      "name": "驯兽师联盟",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%A9%AF%E5%85%BD%E5%B8%88%E8%81%94%E7%9B%9F",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%A9%AF%E5%85%BD%E5%B8%88%E8%81%94%E7%9B%9F"
+      ],
+      "comment": "以该组动画系列的中文字幕制作与发布为主。"
+    },
+    {
+      "id": "group_starry",
+      "name": "星空字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E6%98%9F%E7%A9%BA%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E6%98%9F%E7%A9%BA%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画及该组系列作品发布为主。"
+    },
+    {
+      "id": "group_ktxp",
+      "name": "极影字幕社",
+      "url": "https://www.animes.garden/resources/1?fansub=%E6%9E%81%E5%BD%B1%E5%AD%97%E5%B9%95%E7%A4%BE",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E6%9E%81%E5%BD%B1%E5%AD%97%E5%B9%95%E7%A4%BE"
+      ],
+      "comment": "以中文字幕动画与字幕社发布为主；该组入口不等同于已停运的旧极影 BT 门户。"
+    },
+    {
+      "id": "group_mingy",
+      "name": "MingYSub",
+      "url": "https://www.animes.garden/resources/1?fansub=MingYSub",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=MingYSub"
+      ],
+      "comment": "以该组的动画字幕、单集与系列作品发布为主。"
+    },
+    {
+      "id": "group_henc",
+      "name": "H-Enc",
+      "url": "https://www.animes.garden/resources/1?fansub=H-Enc",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=H-Enc"
+      ],
+      "comment": "以该组动画编码／压制版本为主，字幕和音轨配置依资源标题确认。"
+    },
+    {
+      "id": "group_lipu",
+      "name": "离谱Sub",
+      "url": "https://www.animes.garden/resources/1?fansub=%E7%A6%BB%E8%B0%B1Sub",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E7%A6%BB%E8%B0%B1Sub"
+      ],
+      "comment": "以该组的中文字幕动画作品发布为主。"
+    },
+    {
+      "id": "group_yunge",
+      "name": "云歌字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E4%BA%91%E6%AD%8C%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E4%BA%91%E6%AD%8C%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画和该组字幕作品发布为主。"
+    },
+    {
+      "id": "group_porter",
+      "name": "PorterRAWS",
+      "url": "https://www.animes.garden/resources/1?fansub=PorterRAWS",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=PorterRAWS"
+      ],
+      "comment": "以动画片源及编码版本发布为主；RAW 标签与是否附带字幕须按具体资源确认。"
+    },
+    {
+      "id": "group_wandou",
+      "name": "豌豆字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E8%B1%8C%E8%B1%86%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E8%B1%8C%E8%B1%86%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以中文字幕动画、番剧单集与合作发布版本为主。"
+    },
+    {
+      "id": "group_tonari",
+      "name": "隣天使字幕组",
+      "url": "https://www.animes.garden/resources/1?fansub=%E9%9A%A3%E5%A4%A9%E4%BD%BF%E5%AD%97%E5%B9%95%E7%BB%84",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "zh",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=%E9%9A%A3%E5%A4%A9%E4%BD%BF%E5%AD%97%E5%B9%95%E7%BB%84"
+      ],
+      "comment": "以该组的中文字幕动画和系列作品为主。"
+    },
+    {
+      "id": "group_kirara",
+      "name": "Kirara Fantasia",
+      "url": "https://www.animes.garden/resources/1?fansub=Kirara+Fantasia",
+      "category": "public",
+      "kind": "third_party_group_index",
+      "parent_site_id": "animegarden",
+      "language": "multi",
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "group_page_seen",
+        "note": "已读取第三方分组页；该 URL 不是字幕组官网。资源简介概括发布类型，不保证每部作品的字幕、清晰度或做种状态。"
+      },
+      "sources": [
+        "https://www.animes.garden/resources/1?fansub=Kirara+Fantasia"
+      ],
+      "comment": "以该发布者整理的动画资源为主，作品范围、字幕和片源依单项标题确认。"
+    }
+  ],
+  "supplementary_sites": [
+    {
+      "id": "hi10anime",
+      "name": "Hi10 Anime",
+      "url": "https://hi10anime.com/",
+      "category": "supplementary",
+      "kind": "direct_download",
+      "language": "en",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "首页可读取；具体作品的下载方式和账号限制需看发布页。"
+      },
+      "sources": [
+        "https://hi10anime.com/"
+      ],
+      "comment": "以体积较小的 10-bit／HEVC 动画压制、英文字幕新番与蓝光版本为主。"
+    },
+    {
+      "id": "tsdm",
+      "name": "天使动漫论坛",
+      "url": "https://www.tsdm39.com/",
+      "category": "supplementary",
+      "kind": "forum",
+      "language": "zh",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次返回 403；论坛账号、积分和版块权限需按站内规则确认。"
+      },
+      "sources": [
+        "https://www.tsdm39.com/",
+        "https://acgnavi.net/"
+      ],
+      "comment": "以中文动画、BDRip、动漫音乐及综合 ACG 交流分享为主，常见网盘资源。"
+    },
+    {
+      "id": "acgripbbs",
+      "name": "Anime 字幕论坛",
+      "url": "https://bbs.acgrip.com/",
+      "category": "supplementary",
+      "kind": "subtitle_forum",
+      "language": "zh",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取字幕分享版块；与 ACG.RIP 种子站是不同网址，不应混淆。"
+      },
+      "sources": [
+        "https://bbs.acgrip.com/"
+      ],
+      "comment": "以动画外挂字幕、字体、字幕修订及老番字幕整理为主，适合为 RAW／BDRip 补字幕。"
+    },
+    {
+      "id": "nibl",
+      "name": "NIBL",
+      "url": "https://nibl.co.uk/",
+      "category": "supplementary",
+      "kind": "xdcc_index",
+      "language": "en",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "这是 XDCC 文件索引，不是 BT 种子站；已读取官方说明和文件列表。"
+      },
+      "sources": [
+        "https://nibl.co.uk/"
+      ],
+      "comment": "以 IRC／XDCC 机器人上的动画文件索引为主，可补充查找字幕组和旧番发布。"
+    },
+    {
+      "id": "animesharing",
+      "name": "Anime-Sharing",
+      "url": "https://www.anime-sharing.com/",
+      "category": "supplementary",
+      "kind": "forum",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "content_seen",
+        "note": "已读取论坛及 Anime／Torrents 导航；整体并非专门的番剧站。"
+      },
+      "sources": [
+        "https://www.anime-sharing.com/"
+      ],
+      "comment": "以 ACG 综合资源交流为主，含动画、音乐与游戏等板块，动画部分可作为下载补充。"
+    },
+    {
+      "id": "tsukihime",
+      "name": "TsukiHime",
+      "url": "https://tsukihime.org/",
+      "category": "supplementary",
+      "kind": "emerging_aggregator",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "shell_only",
+        "note": "本次只取得页面框架和零条渲染结果，未核实资源覆盖、下载方式或完整功能。"
+      },
+      "sources": [
+        "https://tsukihime.org/",
+        "https://animetosho.org/"
+      ],
+      "comment": "作为 Anime Tosho 公告提及的新项目收录，用于动画资源聚合方向的补充考察。"
+    },
+    {
+      "id": "animetoshonew",
+      "name": "Anime Tosho NEW",
+      "url": "https://animetosho.xyz/",
+      "category": "supplementary",
+      "kind": "emerging_aggregator",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次返回 403；不要视为原站官方迁移地址，当前功能和资源范围未核实。"
+      },
+      "sources": [
+        "https://animetosho.xyz/",
+        "https://animetosho.org/"
+      ],
+      "comment": "作为 Anime Tosho 原站公告列出的独立新项目收录，关注动画资源聚合与下载索引。"
+    },
+    {
+      "id": "amenzb",
+      "name": "ameNZB",
+      "url": "https://amenzb.moe/",
+      "category": "supplementary",
+      "kind": "usenet_related",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次返回 502，功能未核实；不应直接当作 BT 源配置。"
+      },
+      "sources": [
+        "https://amenzb.moe/",
+        "https://animetosho.org/"
+      ],
+      "comment": "作为 Anime Tosho 公告列出的动画相关替代项目收录，主要关注 NZB／Usenet 方向。"
+    },
+    {
+      "id": "aninzb",
+      "name": "aninzb",
+      "url": "https://aninzb.moe/",
+      "category": "supplementary",
+      "kind": "usenet_related",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次未取得正文，功能未核实；不应直接当作 BT 源配置。"
+      },
+      "sources": [
+        "https://aninzb.moe/",
+        "https://animetosho.org/"
+      ],
+      "comment": "作为 Anime Tosho 公告列出的动画相关替代项目收录，主要关注 NZB／Usenet 方向。"
+    },
+    {
+      "id": "otakuness",
+      "name": "Otakuness",
+      "url": "https://otakuness.top/",
+      "category": "supplementary",
+      "kind": "emerging_aggregator",
+      "language": "multi",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "fetch_failed",
+        "note": "本次未取得正文，具体主打资源与下载方式尚未确认；属于候选项。"
+      },
+      "sources": [
+        "https://otakuness.top/",
+        "https://animetosho.org/"
+      ],
+      "comment": "作为 Anime Tosho 公告提及的动画资源相关新项目收录，供进一步核实。"
+    }
+  ],
+  "historical_sites": [
+    {
+      "id": "animetosho",
+      "name": "Anime Tosho 原站",
+      "url": "https://animetosho.org/",
+      "category": "historical",
+      "kind": "archive_or_reduced_service",
+      "language": "en",
+      "rss": false,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "frozen_notice",
+        "note": "官方公告称 2026-05-09 永久停止更新；另公告存储／订阅服务器拟于 10 月上中旬关闭，影响种子、NZB、附件、RSS 和 API。此处不声称逐项功能关闭均已实测。"
+      },
+      "sources": [
+        "https://animetosho.org/"
+      ],
+      "comment": "历史上以英文字幕动画聚合、种子、NZB、附件和直链镜像为主，现在主要作为旧发布索引记录。"
+    },
+    {
+      "id": "utw",
+      "name": "Unlimited Translation Works（UTW）",
+      "url": "https://utw.me/",
+      "category": "historical",
+      "kind": "archive_or_reduced_service",
+      "language": "en",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "archive_content_seen",
+        "note": "本次首页可读，最新展示文章为 2018 年；未证明持续更新，也未逐一核实旧下载。"
+      },
+      "sources": [
+        "https://utw.me/"
+      ],
+      "comment": "以英文字幕动画旧项目为主，包含 Fate 系列等作品，适合查历史字幕组版本。"
+    },
+    {
+      "id": "hatsuyuki",
+      "name": "Hatsuyuki Fansubs",
+      "url": "https://www.hatsuyuki-fansubs.com/",
+      "category": "historical",
+      "kind": "archive_or_reduced_service",
+      "language": "en",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "archive_content_seen",
+        "note": "本次首页主要展示 2021 年及更早发布；旧 Torrent 链接可见，但未测试下载。"
+      },
+      "sources": [
+        "https://www.hatsuyuki-fansubs.com/"
+      ],
+      "comment": "以英文字幕长篇动画和旧发布合集为主，可见 One Piece 等项目及不同编码版本。"
+    },
+    {
+      "id": "coalgirls",
+      "name": "Coalgirls",
+      "url": "https://coalgirls.wakku.to/",
+      "category": "historical",
+      "kind": "archive_or_reduced_service",
+      "language": "en",
+      "rss": null,
+      "verification": {
+        "checked_on": "2026-10-28",
+        "result": "reduced_service_notice",
+        "note": "官方称自有 Tracker 已关闭并移除种子文件链接；页面也有 2026 年单独发布记录，不能简单说该组完全停止发布。"
+      },
+      "sources": [
+        "https://coalgirls.wakku.to/"
+      ],
+      "comment": "以英文字幕蓝光压制、高清完结动画合集为主，现主要保留发布记录及外部种子入口。"
+    }
+  ]
+}

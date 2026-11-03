@@ -1,0 +1,79 @@
+#pragma once
+
+#include "core/Models.h"
+
+#include "FramelessWindow.h"
+#include <QSet>
+#include <QVector>
+
+class Catalog;
+class Database;
+struct AppConfig;
+class HttpClient;
+class TorrentEngine;
+class SearchAggregator;
+class BangumiClient;
+class ImageLoader;
+class HomePage;
+class SearchPage;
+class LibraryPage;
+class DownloadsPage;
+class SitesPage;
+class LocalLibrary;
+class AnimeDownloads;
+class SettingsPage;
+class AnimeDetailPage;
+class QStackedWidget;
+class QPushButton;
+class QLabel;
+
+class MainWindow : public FramelessWindow {
+    Q_OBJECT
+public:
+    MainWindow(Catalog *catalog, Database *db, AppConfig *config, HttpClient *http,
+               TorrentEngine *engine, SearchAggregator *aggregator, BangumiClient *bangumi,
+               ImageLoader *images, QWidget *parent = nullptr);
+
+    void openSubjectById(int bangumiId);
+    void searchQuery(const QString &query);
+    void handleArguments(const QStringList &arguments);
+
+private:
+    void buildUi();
+    void openAnime(const AnimeSubject &subject, bool localOnly=false);
+    void closeDetail();
+    void onFollowChanged(const AnimeSubject &subject, bool following);
+    void onDownloadRequested(const AnimeSubject &subject,const ResourceResult &result);
+    void selectPage(int index);
+    void setEngineStatus(const QString &text);
+    void showDownloaderMenu(QWidget *anchor);
+    void updateDownloader();
+    void importCatalog();
+    void exportCatalog();
+
+    Catalog *m_catalog;
+    Database *m_db;
+    AppConfig *m_config;
+    HttpClient *m_http;
+    TorrentEngine *m_engine;
+    SearchAggregator *m_aggregator;
+    BangumiClient *m_bangumi;
+    ImageLoader *m_images;
+
+    QStackedWidget *m_stack;
+    QVector<QPushButton *> m_navButtons;
+    QLabel *m_engineStatus;
+
+    HomePage *m_home;
+    SearchPage *m_search;
+    LibraryPage *m_library;
+    DownloadsPage *m_downloads;
+    SitesPage *m_sites;
+    LocalLibrary *m_localLibrary;
+    AnimeDownloads *m_animeDownloads;
+    SettingsPage *m_settings;
+    AnimeDetailPage *m_detail = nullptr;
+    QSet<int> m_following;
+    int m_currentNav = 0;
+    QString m_pendingInput;
+};

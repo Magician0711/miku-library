@@ -1,0 +1,6 @@
+Microsoft Visual C++ Runtime (x64)
+App-local DLLs copied from the Visual Studio Redistributable directory.
+The official vc_redist.x64.exe installer is also included.
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
+These Microsoft components retain their original license terms.
