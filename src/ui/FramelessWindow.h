@@ -24,10 +24,13 @@ private:
     void toggleMaximized();
     void applyThemeToChrome();
     void updateControls();
+    void reveal();
     bool isDragArea(const QPoint &position) const;
     QWidget *m_titleBar;
     QLabel *m_context;
     QToolButton *m_minimize;
     QToolButton *m_maximize;
     QToolButton *m_close;
+    bool m_cloaked = false;
+    bool m_revealed = false;
 };

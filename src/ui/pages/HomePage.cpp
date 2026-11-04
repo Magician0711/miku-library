@@ -80,6 +80,8 @@ void HomePage::load()
     m_bangumi->calendar([this, generation](QVector<QPair<int, QVector<AnimeSubject>>> days, QString error) {
         if (generation != m_generation)
             return;
+        // The loading placeholder fades into the result rather than snapping.
+        Motion::crossfade(m_results);
         if (!error.isEmpty()) {
             m_status->setText(QStringLiteral("加载失败"));
             m_empty->setText(QStringLiteral("加载失败"), error + QStringLiteral("\n点击右上角刷新重试。"));

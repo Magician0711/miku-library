@@ -54,6 +54,7 @@ Palette lightPalette()
     p.err=QColor("#c2504a"); p.errSoft=QColor("#fcecea"); p.errBorder=QColor("#eab9b5"); p.info=QColor("#3f76a6");
     p.navHover=QColor("#e2eaea"); p.rowHover=QColor("#fafcfc"); p.separator=QColor("#b5c4c3");
     p.scroll=QColor("#cbd7d6"); p.scrollHover=QColor("#a3b6b4"); p.segmentHover=QColor(255,255,255,140);
+    p.segmentThumb=QColor("#ffffff"); p.segmentThumbBorder=QColor("#e1e9e9");
     p.indicatorBorder=QColor("#b6cac8"); p.indicatorBg=QColor("#ffffff");
     p.probedBg=QColor("#dff3ec"); p.probedFg=QColor("#1d7a62"); p.guessedBg=QColor("#f6f0e1"); p.guessedFg=QColor("#8a6a1f");
     p.unknownBg=QColor("#edf2f2"); p.unknownFg=QColor("#6f8381"); p.hdrBg=QColor("#efeaf6"); p.hdrFg=QColor("#6f5a8c");
@@ -76,6 +77,7 @@ Palette darkPalette()
     p.err=QColor("#ef6f67"); p.errSoft=QColor("#3b2322"); p.errBorder=QColor("#6b3532"); p.info=QColor("#6ea8dc");
     p.navHover=QColor("#1d2526"); p.rowHover=QColor("#232b2d"); p.separator=QColor("#3c4a48");
     p.scroll=QColor("#3a4547"); p.scrollHover=QColor("#52605e"); p.segmentHover=QColor(255,255,255,18);
+    p.segmentThumb=QColor("#3a4547"); p.segmentThumbBorder=QColor("#4a5856");
     p.indicatorBorder=QColor("#4d5c5a"); p.indicatorBg=QColor("#1a2122");
     p.probedBg=QColor("#193630"); p.probedFg=QColor("#6fd3ac"); p.guessedBg=QColor("#3a311b"); p.guessedFg=QColor("#e3c06f");
     p.unknownBg=QColor("#2a3233"); p.unknownFg=QColor("#9aaaa8"); p.hdrBg=QColor("#2f2840"); p.hdrFg=QColor("#bea8e3");
@@ -300,13 +302,13 @@ QHeaderView::section:last { border-top-right-radius:12px; }
 QTableView QTableCornerButton::section { background:$surface$; border:none; }
 
 /* tabs rendered as a segmented control */
-QTabWidget::pane { background:transparent; border:none; top:8px; }
+QTabWidget::pane { background:transparent; border:none; top:0; }
 QTabWidget::tab-bar { left:0; }
 QTabBar { background:transparent; }
 QTabBar::tab { background:$surface3$; color:$text2$; padding:8px 18px; margin:0; border:1px solid $surface3$; }
 QTabBar::tab:first { border-top-left-radius:9px; border-bottom-left-radius:9px; }
 QTabBar::tab:last { border-top-right-radius:9px; border-bottom-right-radius:9px; }
-QTabBar::tab:selected { background:$surface$; color:$accentText$; font-weight:600; border-color:$border$; border-radius:8px; }
+QTabBar::tab:selected { background:$segmentThumb$; color:$accentText$; font-weight:600; border-color:$segmentThumbBorder$; border-radius:8px; }
 QTabBar::tab:hover:!selected { color:$text$; }
 
 /* checkboxes */
@@ -455,7 +457,7 @@ QString resolveTokens(const QString &sheet)
         {"primaryDisabled",c.primaryDisabled},{"primaryDisabledText",c.primaryDisabledText},
         {"ok",c.ok},{"warn",c.warn},{"warnSoft",c.warnSoft},{"err",c.err},{"errSoft",c.errSoft},{"errBorder",c.errBorder},
         {"navHover",c.navHover},{"rowHover",c.rowHover},{"separator",c.separator},{"scroll",c.scroll},{"scrollHover",c.scrollHover},
-        {"segmentHover",c.segmentHover},{"indicatorBorder",c.indicatorBorder},{"indicatorBg",c.indicatorBg}};
+        {"segmentHover",c.segmentHover},{"segmentThumb",c.segmentThumb},{"segmentThumbBorder",c.segmentThumbBorder},{"indicatorBorder",c.indicatorBorder},{"indicatorBg",c.indicatorBg}};
     const QHash<QString,QString> images = {
         {"imgChevronDown",themeImage("chevron-down",c.text2)},{"imgChevronUp",themeImage("chevron-up",c.text2)},
         {"imgPlus",themeImage("plus",c.text2)},{"imgMinus",themeImage("minus",c.text2)},

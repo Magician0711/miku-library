@@ -8,6 +8,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QShowEvent>
+#include <QTimer>
 #include <QToolButton>
 #include <QWindow>
 
@@ -161,6 +162,16 @@ void FramelessWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
 #ifdef Q_OS_WIN
     const auto hwnd = reinterpret_cast<HWND>(winId());
+    // Keep the window invisible until its first frame is drawn; otherwise Windows
+    // shows an unpainted client area for a moment on launch.
+    if (!m_revealed && !m_cloaked && windowHandle()) {
+        const BOOL cloak = TRUE;
+        if (SUCCEEDED(DwmSetWindowAttribute(hwnd, 13 /* DWMWA_CLOAK */, &cloak, sizeof(cloak)))) {
+            m_cloaked = true;
+            windowHandle()->installEventFilter(this);
+            QTimer::singleShot(600, this, &FramelessWindow::reveal);   // never stay hidden
+        }
+    }
     const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
     const LONG_PTR desired = style | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU
                                   | WS_MAXIMIZEBOX | WS_MINIMIZEBOX;
@@ -186,8 +197,23 @@ bool FramelessWindow::isDragArea(const QPoint &position) const
     return !child || child == m_titleBar;
 }
 
+void FramelessWindow::reveal()
+{
+    m_revealed = true;
+    if (!m_cloaked) return;
+    m_cloaked = false;
+    if (windowHandle()) windowHandle()->removeEventFilter(this);
+#ifdef Q_OS_WIN
+    const BOOL cloak = FALSE;
+    DwmSetWindowAttribute(reinterpret_cast<HWND>(winId()), 13 /* DWMWA_CLOAK */, &cloak, sizeof(cloak));
+#endif
+}
+
 bool FramelessWindow::eventFilter(QObject *object, QEvent *event)
 {
+    // The first expose paints and flushes synchronously; uncloak right after it.
+    if (m_cloaked && object == windowHandle() && event->type() == QEvent::Expose)
+        QTimer::singleShot(0, this, &FramelessWindow::reveal);
     if (object == m_titleBar) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             auto *mouse = static_cast<QMouseEvent *>(event);

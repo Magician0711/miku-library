@@ -1,12 +1,19 @@
 #include "Motion.h"
 #include "Theme.h"
 
+#include <QAbstractAnimation>
 #include <QAbstractButton>
+#include <QBasicTimer>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QLayout>
 #include <QPainter>
 #include <QPropertyAnimation>
+#include <QScreen>
 #include <QTimer>
+#include <QTimerEvent>
 #include <QVariantAnimation>
 
 #ifdef Q_OS_WIN
@@ -15,6 +22,13 @@
 #endif
 
 namespace Motion {
+
+struct SnapshotFade::Trace {
+    QElapsedTimer clock;
+    qint64 grabMs = 0, startedAt = -1, last = -1, worst = 0;
+    int frames = 0;
+    QString name;
+};
 
 bool enabled()
 {
@@ -28,19 +42,78 @@ bool enabled()
 
 int duration(int ms) { return enabled() ? ms : 0; }
 
+namespace {
+class DisplayClock final : public QAnimationDriver {
+public:
+    explicit DisplayClock(QObject *parent) : QAnimationDriver(parent) {}
+    void setRefreshRate(qreal hz)
+    {
+        // 4 ms floor keeps a 240 Hz panel fed without spinning; 16 ms is Qt's default.
+        m_interval = std::chrono::milliseconds(qBound(4, qRound(1000.0 / qMax<qreal>(hz, 30.0)), 16));
+        if (m_timer.isActive()) m_timer.start(m_interval, Qt::PreciseTimer, this);
+    }
+
+protected:
+    void start() override { QAnimationDriver::start(); m_timer.start(m_interval, Qt::PreciseTimer, this); }
+    void stop() override { m_timer.stop(); QAnimationDriver::stop(); }
+    void timerEvent(QTimerEvent *event) override
+    {
+        if (event->timerId() == m_timer.timerId()) advance();
+        else QAnimationDriver::timerEvent(event);
+    }
+
+private:
+    QBasicTimer m_timer;
+    std::chrono::milliseconds m_interval{16};
+};
+
+// What the window shows over target's rectangle, parents' backgrounds included,
+// so the fade layer can paint every pixel itself.
+QPixmap grabArea(QWidget *target)
+{
+    QWidget *window = target->window();
+    return window->grab(QRect(target->mapTo(window, QPoint(0, 0)), target->size()));
+}
+} // namespace
+
+void installDisplayClock()
+{
+    auto *clock = new DisplayClock(qApp);
+    // The fastest screen sets the pace; the timer only runs while something animates.
+    auto update = [clock] {
+        qreal hz = 60;
+        for (const auto *screen : QGuiApplication::screens()) hz = qMax(hz, screen->refreshRate());
+        clock->setRefreshRate(hz);
+    };
+    auto watch = [update](QScreen *screen) { QObject::connect(screen, &QScreen::refreshRateChanged, qApp, update); };
+    for (auto *screen : QGuiApplication::screens()) watch(screen);
+    QObject::connect(qApp, &QGuiApplication::screenAdded, qApp, [update, watch](QScreen *screen) { watch(screen); update(); });
+    QObject::connect(qApp, &QGuiApplication::screenRemoved, qApp, update);
+    update();
+    clock->install();
+}
+
 SnapshotFade::SnapshotFade(QWidget *target, int ms)
-    : QWidget(target)
+    : QWidget(target->parentWidget() ? target->parentWidget() : target)
+    , m_target(target)
 {
     // Capture first: an older fade still on screen becomes part of this snapshot,
     // so rapid changes blend instead of jumping.
-    m_snapshot = target->grab();
-    for (auto *older : target->findChildren<SnapshotFade *>(Qt::FindDirectChildrenOnly))
-        if (older != this) older->deleteLater();
+    if (qEnvironmentVariableIsSet("ANIME_NEXUS_MOTION_TRACE")) {
+        m_trace = new Trace;
+        m_trace->clock.start();
+        m_trace->name = target->objectName().isEmpty() ? QString::fromLatin1(target->metaObject()->className()) : target->objectName();
+    }
+    m_before = grabArea(target);
+    if (m_trace) m_trace->grabMs = m_trace->clock.elapsed();
+    for (auto *older : parentWidget()->findChildren<SnapshotFade *>(Qt::FindDirectChildrenOnly))
+        if (older != this && older->m_target == target) older->deleteLater();
     setAttribute(Qt::WA_TransparentForMouseEvents);
-    setAttribute(Qt::WA_NoSystemBackground);
+    setAttribute(Qt::WA_OpaquePaintEvent);
     setFocusPolicy(Qt::NoFocus);
-    setGeometry(target->rect());
+    setGeometry(parentWidget() == target ? target->rect() : target->geometry());
     target->installEventFilter(this);
+    connect(target, &QObject::destroyed, this, &QObject::deleteLater);
     raise();
     show();
 
@@ -55,7 +128,7 @@ SnapshotFade::SnapshotFade(QWidget *target, int ms)
     animation->setEasingCurve(QEasingCurve::OutCubic);
     QTimer::singleShot(600, this, &SnapshotFade::begin);
     connect(animation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
-        // QStackedWidget raises the page it switches to; stay above it.
+        // Stay above anything raised beside the target since the fade began.
         if (parent()->children().constLast() != this) raise();
         m_opacity = value.toReal();
         update();
@@ -63,24 +136,53 @@ SnapshotFade::SnapshotFade(QWidget *target, int ms)
     connect(animation, &QVariantAnimation::finished, this, &QObject::deleteLater);
 }
 
+SnapshotFade::~SnapshotFade()
+{
+    if (!m_trace) return;
+    qInfo().noquote() << QStringLiteral("motion %1: grab %2 ms, wait %3 ms, %4 frames in %5 ms, worst gap %6 ms")
+        .arg(m_trace->name).arg(m_trace->grabMs).arg(m_trace->startedAt).arg(m_trace->frames)
+        .arg(m_trace->startedAt < 0 ? 0 : m_trace->clock.elapsed() - m_trace->startedAt).arg(m_trace->worst);
+    delete m_trace;
+}
+
 void SnapshotFade::begin()
 {
-    if (m_animation->state() == QAbstractAnimation::Stopped && m_opacity >= 1.0)
-        m_animation->start();
+    if (m_animation->state() != QAbstractAnimation::Stopped || m_opacity < 1.0)
+        return;
+    // Freeze the new look as well. Hidden for the capture only; both changes land
+    // before the next paint, so nothing flickers.
+    if (!m_target) return;
+    hide();
+    m_after = grabArea(m_target);
+    show();
+    if (m_trace) m_trace->startedAt = m_trace->last = m_trace->clock.elapsed();
+    m_animation->start();
 }
 
 bool SnapshotFade::eventFilter(QObject *object, QEvent *event)
 {
-    // Keep covering the target if it is resized mid-fade.
-    if (object == parent() && event->type() == QEvent::Resize) setGeometry(parentWidget()->rect());
+    // The stills no longer match a moved, resized or hidden target; finish at once.
+    if (object == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Move
+                               || event->type() == QEvent::Hide)) { hide(); deleteLater(); }
     return QWidget::eventFilter(object, event);
 }
 
 void SnapshotFade::paintEvent(QPaintEvent *)
 {
+    if (m_trace && m_trace->startedAt >= 0) {
+        const qint64 now = m_trace->clock.elapsed();
+        m_trace->worst = qMax(m_trace->worst, now - m_trace->last);
+        m_trace->last = now; ++m_trace->frames;
+    }
     QPainter painter(this);
-    painter.setOpacity(m_opacity);
-    painter.drawPixmap(0, 0, m_snapshot);
+    // Source copies alpha too, which keeps translucent dialog corners correct.
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    if (!m_after.isNull()) {
+        painter.drawPixmap(0, 0, m_after);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        painter.setOpacity(m_opacity);
+    }
+    painter.drawPixmap(0, 0, m_before);
     if (m_animation->state() == QAbstractAnimation::Stopped && m_opacity >= 1.0)
         QTimer::singleShot(0, this, &SnapshotFade::begin);
 }
@@ -114,6 +216,10 @@ public:
         connect(m_animation, &QPropertyAnimation::finished, this, &QWidget::close);
         QTimer::singleShot(800, this, [this] { begin(); });
         show();
+        // The caller restyles the app right after this returns, and the window
+        // repaints in the new theme on the next pass. Paint the snapshot now so it
+        // already covers the window when that happens.
+        repaint();
     }
 
 protected:
@@ -253,8 +359,10 @@ void SlidingIndicator::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const auto &c = Theme::c();
-    painter.setPen(m_look == Look::Outlined ? QPen(c.border, 1) : Qt::NoPen);
-    painter.setBrush(c.surface);
+    // Outlined thumbs sit on a segmented track and must read as raised in both themes.
+    const bool outlined = m_look == Look::Outlined;
+    painter.setPen(outlined ? QPen(c.segmentThumbBorder, 1) : Qt::NoPen);
+    painter.setBrush(outlined ? c.segmentThumb : c.surface);
     painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), m_radius, m_radius);
 }
 

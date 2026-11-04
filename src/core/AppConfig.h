@@ -25,6 +25,8 @@ struct AppConfig {
     bool hasSavedDownloadDirectory = false;
 
     static QString configPath();
+    // "AnimeNexus" inside the system Downloads folder; created on first use.
+    static QString defaultDownloadDirectory();
     static QString dataDir();
     static AppConfig load();
     bool save() const;

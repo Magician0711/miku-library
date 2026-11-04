@@ -8,6 +8,7 @@
 #include "net/TorrentEngine.h"
 #include "ui/ImageLoader.h"
 #include "ui/MainWindow.h"
+#include "ui/Motion.h"
 #include "ui/Theme.h"
 #include "ui/Overlays.h"
 
@@ -88,6 +89,7 @@ int main(int argc, char *argv[])
     app.setApplicationVersion(QStringLiteral(ANIME_NEXUS_VERSION));
     app.setOrganizationName(QStringLiteral("anime-nexus"));
     Theme::applyTheme(&app);
+    Motion::installDisplayClock();
     app.setQuitOnLastWindowClosed(false);
 
     QDir().mkpath(AppConfig::dataDir());
@@ -102,8 +104,18 @@ int main(int argc, char *argv[])
         Theme::setMode(appearance);
     // Quick start and usage declaration, once per declaration version.
     if (config.disclaimerAccepted < Ui::kDisclaimerVersion) {
-        if (!Ui::firstRunGuide(nullptr))
+        const QString proposed = config.hasSavedDownloadDirectory ? config.engine.savePath
+                                                                  : AppConfig::defaultDownloadDirectory();
+        QString downloadDir = proposed;
+        if (!Ui::firstRunGuide(nullptr, false, &downloadDir))
             return 0;
+        // A different folder picked in the guide; the default is created further down.
+        if (downloadDir != proposed) {
+            QDir().mkpath(downloadDir);
+            config.engine.savePath = downloadDir;
+            config.paths.downloadDir = downloadDir;
+            config.hasSavedDownloadDirectory = true;
+        }
         config.disclaimerAccepted = Ui::kDisclaimerVersion;
         // The guide's theme picker applies live; keep whatever was chosen there.
         config.appearance = Theme::modeToString(Theme::mode());

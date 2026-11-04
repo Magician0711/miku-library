@@ -35,10 +35,11 @@ write(STAGE/'qt.conf','[Paths]\nPrefix=.\nPlugins=.\n')
 # Include the matching source and notices, never the user's profile or history.
 for directory in ('src','tests','assets','config','tools'):
     shutil.copytree(PROJECT/directory,STAGE/'Source'/directory)
-for name in ('CMakeLists.txt','build.bat','README.md','.gitignore','.gitattributes'):
+for name in ('CMakeLists.txt','build.bat','README.md','UI_REWRITE.md','LICENSE','.gitignore','.gitattributes'):
     copy(PROJECT/name,STAGE/'Source'/name)
-for name in ('downloader-settings.png','downloader-switcher.png','changes-2026-11-02.md'):
-    copy(PROJECT/'docs'/name,STAGE/'Source/docs'/name)
+copy(PROJECT/'LICENSE',STAGE/'LICENSE')
+# The README links into docs/; ship all of it so those links work offline.
+shutil.copytree(PROJECT/'docs',STAGE/'Source'/'docs')
 readme=(STAGE/'Source/README.md').read_text(encoding='utf-8-sig')
 write(STAGE/'Source/README.md','> 此目录为对应源码。无需编译即可使用压缩包上层的 `AnimeNexus.exe`。\n\n'+readme)
 for path in (STAGE/'config/anime_sites.json',STAGE/'Source/config/anime_sites.json'):

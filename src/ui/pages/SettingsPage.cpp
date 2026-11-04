@@ -87,9 +87,8 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     root->addWidget(header.widget);
 
     m_tabs=new QTabWidget(this);
-    m_tabs->tabBar()->setDrawBase(false);
-    // tabBarClicked fires before the page changes, which is when the snapshot is needed.
-    connect(m_tabs->tabBar(),&QTabBar::tabBarClicked,this,[this](int index){if(index!=m_tabs->currentIndex())Motion::crossfade(m_tabs,Motion::Fast);});
+    // Sections are switched by the segmented bar built below, not the native tab bar.
+    m_tabs->tabBar()->hide();
     auto addSection=[&](const QString &name,const QString &description) {
         auto *body=new QWidget; body->setObjectName("ScrollBody"); body->setMaximumWidth(kColumnWidth);
         auto *col=new QVBoxLayout(body); col->setContentsMargins(0,4,10,12); col->setSpacing(14);
@@ -256,7 +255,7 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     // About: version and the usage declaration accepted on first launch.
     col=addSection(QStringLiteral("关于"),QStringLiteral("Anime Nexus 是番剧资源检索与下载管理工具。"));
     auto *about=settingsCard(col,QStringLiteral("Anime Nexus ")+QCoreApplication::applicationVersion());
-    about->layout()->addWidget(label(QStringLiteral("聚合多个公开资源站的检索结果，按字幕组整理番剧资源，管理下载并播放本地视频。第三方组件的许可文本位于程序目录的 licenses 文件夹。"),"SettingHint",true,about));
+    about->layout()->addWidget(label(QStringLiteral("聚合多个公开资源站的检索结果，按字幕组整理番剧资源，管理下载并播放本地视频。本软件以 GNU GPL v3.0 许可发布（程序目录的 LICENSE 文件），第三方组件的许可文本位于 licenses 文件夹。"),"SettingHint",true,about));
     for(const auto &[title,text]:{std::pair{QStringLiteral("免费开源"),Ui::freeSoftwareNote()},std::pair{QStringLiteral("关于播放"),Ui::playerNote()}}) {
         about->layout()->addWidget(divider(about));
         about->layout()->addWidget(label(title,"SettingTitle",false,about));
@@ -272,6 +271,26 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     }
     col->addStretch(1);
     const int aboutTab=m_tabs->count()-1;
+
+    // Section switcher: the same segmented control as the theme picker, with a sliding thumb.
+    auto *sectionBar=new QFrame(this); sectionBar->setObjectName("Segmented");
+    auto *sectionRow=new QHBoxLayout(sectionBar); sectionRow->setContentsMargins(4,4,4,4); sectionRow->setSpacing(2);
+    auto *sections=new QButtonGroup(this);
+    for(int i=0;i<m_tabs->count();++i) {
+        auto *button=new QPushButton(m_tabs->tabText(i),sectionBar);
+        button->setObjectName("SegmentButton"); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor);
+        sections->addButton(button,i); sectionRow->addWidget(button);
+    }
+    new Motion::SlidingIndicator(sectionBar,sections->buttons(),Motion::SlidingIndicator::Look::Outlined,8);
+    connect(sections,&QButtonGroup::idClicked,this,[this](int index) {
+        if(index==m_tabs->currentIndex())return;
+        Motion::crossfade(m_tabs,Motion::Fast);
+        m_tabs->setCurrentIndex(index);
+    });
+    connect(m_tabs,&QTabWidget::currentChanged,sections,[sections](int index){if(auto *button=sections->button(index))button->setChecked(true);});
+    sections->button(m_tabs->currentIndex())->setChecked(true);
+    auto *sectionLine=new QHBoxLayout; sectionLine->addWidget(sectionBar); sectionLine->addStretch(1);
+    root->addLayout(sectionLine);
 
     root->addWidget(m_tabs,1);
 

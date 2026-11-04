@@ -2,6 +2,7 @@
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/ImageLoader.h"
+#include "ui/Motion.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -14,10 +15,12 @@
 #include <QKeyEvent>
 #include <QPushButton>
 #include <QScreen>
+#include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QWindow>
 
 int main(int argc,char **argv)
 {
@@ -132,6 +135,78 @@ int main(int argc,char **argv)
         QTimer::singleShot(0,&window,[&]{if(auto *d=qobject_cast<QDialog *>(app.activeModalWidget()))d->reject();});
         check(Ui::replaceDownloadDirectory(&window,"missing",QStringLiteral("目录已不存在。")).isEmpty(),
             "closing missing-directory prompt does not silently choose a path");
+        {
+            // Welcome page: the download folder row shows the proposal and takes a new folder.
+            QString folder=sandbox.filePath("AnimeNexus");
+            const QString picked=sandbox.path();
+            bool shown=false,changed=false;
+            QTimer::singleShot(150,&window,[&] {
+                auto *d=qobject_cast<QDialog *>(app.activeModalWidget());
+                QPushButton *change=nullptr;
+                if(d)for(auto *b:d->findChildren<QPushButton *>())if(b->text()==QStringLiteral("更改…"))change=b;
+                auto *where=change?change->parentWidget()->findChild<QLabel *>("GuideNoteText"):nullptr;
+                shown=where&&where->toolTip()==QDir::toNativeSeparators(folder);
+                if(change) {
+                    QTimer::singleShot(150,&window,[&] {
+                        auto *m=app.activeModalWidget();auto *p=m?m->findChild<QFileDialog *>("FilePicker"):nullptr;
+                        if(p){p->setDirectory(picked);static_cast<QDialog *>(p)->accept();}
+                    });
+                    change->click();   // returns once the folder picker closes
+                    changed=where&&where->toolTip()==QDir::toNativeSeparators(picked);
+                }
+                if(d)d->reject();
+            });
+            const bool accepted=Ui::firstRunGuide(&window,false,&folder);
+            check(shown,"welcome page shows the proposed download folder");
+            check(changed&&QDir(folder)==QDir(picked),"welcome page download folder can be changed");
+            check(!accepted,"closing the welcome page still declines");
+        }
+        {
+            // Crossfade: an opaque layer blends the old still over the new one, then leaves.
+            auto *panel=new QWidget(&window);panel->setGeometry(420,300,120,80);panel->setAutoFillBackground(true);
+            QPalette colors=panel->palette();colors.setColor(QPalette::Window,Qt::red);panel->setPalette(colors);panel->show();
+            auto pixel=[&]{return window.grab(QRect(panel->geometry().center(),QSize(1,1))).toImage().pixelColor(0,0);};
+            QElapsedTimer clock;clock.start();
+            while(clock.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            Motion::crossfade(panel,Motion::Normal);
+            colors.setColor(QPalette::Window,Qt::blue);panel->setPalette(colors);
+            auto *fade=window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly);
+            check(!Motion::enabled()||(fade&&fade->testAttribute(Qt::WA_OpaquePaintEvent)),"crossfade layer is opaque so content underneath never repaints per frame");
+            QColor mid;clock.restart();
+            while(clock.elapsed()<1500&&window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly)) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents,5);
+                if(!mid.isValid()&&clock.elapsed()>=90)mid=pixel();
+            }
+            // The fade starts on its first paint, which a hidden test window never gets.
+            const bool exposed=window.windowHandle()&&window.windowHandle()->isExposed();
+            check(!Motion::enabled()||!exposed||(mid.red()>10&&mid.blue()>10),"crossfade shows a blend of old and new content mid-way");
+            const QColor end=pixel();
+            check(!window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly)&&end.blue()>200&&end.red()<40,"crossfade removes itself and leaves the new content");
+            delete panel;
+        }
+        {
+            // Switching a stacked page must not show the new page before the fade:
+            // QStackedWidget raises the new page above its own children.
+            auto *stack=new QStackedWidget(&window);stack->setGeometry(420,300,120,80);
+            for(const QColor color:{QColor(Qt::red),QColor(Qt::blue)}) {
+                auto *page=new QWidget;page->setAutoFillBackground(true);
+                QPalette colors=page->palette();colors.setColor(QPalette::Window,color);page->setPalette(colors);
+                stack->addWidget(page);
+            }
+            stack->show();
+            QElapsedTimer clock;clock.start();
+            while(clock.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            Motion::crossfade(stack,Motion::Normal);
+            stack->setCurrentIndex(1);
+            const QColor first=window.grab(QRect(stack->geometry().center(),QSize(1,1))).toImage().pixelColor(0,0);
+            check(!Motion::enabled()||(first.red()>200&&first.blue()<40),"page switch starts from the old page, not a flash of the new one");
+            clock.restart();
+            while(clock.elapsed()<1500&&window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly))
+                QCoreApplication::processEvents(QEventLoop::AllEvents,5);
+            const QColor end=window.grab(QRect(stack->geometry().center(),QSize(1,1))).toImage().pixelColor(0,0);
+            check(end.blue()>200&&end.red()<40,"page switch ends on the new page");
+            delete stack;
+        }
         {
             const QString covers=sandbox.filePath("covers");QDir().mkpath(covers);
             QFile stale(covers+"/old.img");stale.open(QIODevice::WriteOnly);stale.write("x");stale.close();

@@ -516,14 +516,14 @@ QWidget *themeChooser(QWidget *parent)
 }
 }
 
-bool firstRunGuide(QWidget *parent,bool review)
+bool firstRunGuide(QWidget *parent,bool review,QString *downloadDir)
 {
     DialogSurface dialog(parent,review?QStringLiteral("使用声明"):QStringLiteral("欢迎使用 Anime Nexus"));
     dialog.setObjectName("FirstRunGuide");dialog.setFixedWidth(620);
     auto *pages=new QStackedWidget(&dialog);dialog.content->addWidget(pages);
     using P=Theme::Palette;
 
-    // Page 1: quick start, two things to know, and the theme.
+    // Page 1: quick start, two things to know, then where to save and how it looks.
     auto *start=new QWidget(pages);auto *startCol=new QVBoxLayout(start);startCol->setContentsMargins(0,0,0,0);startCol->setSpacing(14);
     startCol->addWidget(bodyText(QStringLiteral("聚合多个资源站，按字幕组整理番剧资源，并直接管理下载与本地视频。"),start));
     startCol->addWidget(guideSection(start,QStringLiteral("三步上手"),{
@@ -533,8 +533,31 @@ bool firstRunGuide(QWidget *parent,bool review)
     startCol->addWidget(guideSection(start,QStringLiteral("使用须知"),{
         guideRow(start,"play",&P::accentText,"accent",QStringLiteral("关于播放"),playerNote()),
         guideRow(start,"info",&P::warn,"warn",QStringLiteral("免费开源"),freeSoftwareNote())}));
-    startCol->addWidget(guideSection(start,QStringLiteral("界面主题"),{
-        guideRow(start,"sun",&P::accentText,"accent",QStringLiteral("选择配色"),QStringLiteral("立即生效，之后可在右上角或「偏好设置 → 外观」随时修改。"),themeChooser(start))}));
+    QList<QWidget *> setup;
+    if(downloadDir&&!review) {
+        auto *change=new QPushButton(Theme::icon("folder"),QStringLiteral("更改…"),start);
+        auto *row=guideRow(start,"folder",&P::accentText,"accent",QStringLiteral("下载位置"),QString(),change);
+        auto *where=row->findChild<QLabel *>("GuideNoteText");
+        auto show=[where,downloadDir] {
+            // Long paths are shortened in the middle; the tooltip keeps the full one.
+            where->ensurePolished();
+            const QString path=QDir::toNativeSeparators(*downloadDir);
+            where->setText(QStringLiteral("番剧按「番剧名 / 字幕组 / 第 N 季」整理到：\n")
+                +where->fontMetrics().elidedText(path,Qt::ElideMiddle,360));
+            where->setToolTip(path);
+        };
+        show();
+        QObject::connect(change,&QPushButton::clicked,&dialog,[&dialog,downloadDir,show] {
+            // The default folder may not exist yet; start the picker from its parent.
+            QString from=*downloadDir;
+            if(!QFileInfo(from).isDir())from=QFileInfo(from).absolutePath();
+            const QString chosen=chooseDirectory(&dialog,QStringLiteral("选择下载目录"),from);
+            if(!chosen.isEmpty()){*downloadDir=chosen;show();}
+        });
+        setup<<row;
+    }
+    setup<<guideRow(start,"sun",&P::accentText,"accent",QStringLiteral("界面配色"),QStringLiteral("立即生效，之后可在右上角或「偏好设置 → 外观」随时修改。"),themeChooser(start));
+    startCol->addWidget(guideSection(start,setup.size()>1?QStringLiteral("开始之前"):QStringLiteral("界面主题"),setup));
     startCol->addStretch(1);
     pages->addWidget(start);
 

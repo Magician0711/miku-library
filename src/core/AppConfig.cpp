@@ -92,6 +92,11 @@ bool AppConfig::save() const
     return file.write(data)==data.size() && file.commit();
 }
 
+QString AppConfig::defaultDownloadDirectory()
+{
+    return QDir(systemDownloads()).absoluteFilePath(QStringLiteral("AnimeNexus"));
+}
+
 AppConfig::DownloadDirectoryState AppConfig::prepareDownloadDirectory(QString *error,const QString &downloadsRoot)
 {
     if(error)error->clear();

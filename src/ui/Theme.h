@@ -20,7 +20,7 @@ struct Palette {
     QColor accent, accentHover, accentPressed, accentInk, accentText, accentSoft, accentSoft2;
     QColor primaryDisabled, primaryDisabledText;
     QColor ok, warn, warnSoft, err, errSoft, errBorder, info;
-    QColor navHover, rowHover, separator, scroll, scrollHover, segmentHover, indicatorBorder, indicatorBg;
+    QColor navHover, rowHover, separator, scroll, scrollHover, segmentHover, segmentThumb, segmentThumbBorder, indicatorBorder, indicatorBg;
     QColor probedBg, probedFg, guessedBg, guessedFg, unknownBg, unknownFg, hdrBg, hdrFg, subBg, subFg;
     QColor shadow;
 };

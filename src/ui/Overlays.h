@@ -31,6 +31,7 @@ QStringList disclaimerItems();
 QString playerNote();
 QString freeSoftwareNote();
 // First launch: quick start plus the declaration, returns false if declined.
-// With review set it only shows the declaration for re-reading.
-bool firstRunGuide(QWidget *parent, bool review = false);
+// With review set it only shows the declaration for re-reading. Given downloadDir,
+// the first page offers it as the download folder and writes back the choice.
+bool firstRunGuide(QWidget *parent, bool review = false, QString *downloadDir = nullptr);
 }

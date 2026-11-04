@@ -27,6 +27,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
+#include <memory>
 
 namespace {
 
@@ -268,11 +269,16 @@ void AnimeCard::setSubject(const AnimeSubject &subject)
     if(url.isEmpty() || !m_images)return;
     const int id=subject.bangumiId;
     QPointer<AnimeCard> self(this);
-    m_images->request(url,[self,id](QImage image) {
+    // Covers already in memory arrive inside request(); only later arrivals fade in,
+    // and only where they are on screen.
+    auto immediate=std::make_shared<bool>(true);
+    m_images->request(url,[self,id,immediate](QImage image) {
         if(!self || self->m_subject.bangumiId!=id || image.isNull())return;
+        if(!*immediate && !self->m_poster->visibleRegion().isEmpty())Motion::crossfade(self->m_poster,Motion::Fast);
         self->m_cover=image;
         self->updateCover();
     });
+    *immediate=false;
 }
 
 void AnimeCard::mousePressEvent(QMouseEvent *event)
@@ -447,6 +453,9 @@ PageHeader pageHeader(const QString &title, QWidget *parent)
 {
     PageHeader header;
     header.widget=new QWidget(parent);
+    // Fixed height, tall enough for the largest header control (a segmented bar),
+    // so the title sits at the same spot on every page whatever its actions are.
+    header.widget->setFixedHeight(44);
     auto *row=new QHBoxLayout(header.widget);
     row->setContentsMargins(0,0,0,0); row->setSpacing(12);
     row->addWidget(label(title,"PageTitle",false,header.widget),0,Qt::AlignVCenter);
@@ -461,7 +470,7 @@ PageHeader pageHeader(const QString &title, QWidget *parent)
 QVBoxLayout *pageLayout(QWidget *page)
 {
     auto *layout=new QVBoxLayout(page);
-    layout->setContentsMargins(28,22,28,18);
+    layout->setContentsMargins(28,16,28,18);
     layout->setSpacing(16);
     return layout;
 }

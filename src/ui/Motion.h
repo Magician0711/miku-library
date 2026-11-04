@@ -18,6 +18,9 @@ constexpr int Normal = 200;  // selection, expand / collapse, page changes
 constexpr int Slow = 320;    // whole-window theme change
 
 bool enabled();
+// Steps Qt animations at the display's refresh rate instead of Qt's fixed 16 ms
+// timer, which judders on 120 / 144 Hz screens. Call once after QApplication.
+void installDisplayClock();
 // Scales a duration to 0 when the user has turned animations off.
 int duration(int ms);
 
@@ -37,7 +40,11 @@ void setExpanded(QWidget *section, bool expanded, int ms = Normal);
 // Fades a freshly shown top-level popup or dialog in from transparent.
 void fadeIn(QWidget *window, int ms = Fast);
 
-// The snapshot layer used by crossfade(); exposed for tests.
+// The layer used by crossfade(); exposed for tests. It is fully opaque: it blends a
+// still of the old look over a still of the new one, so nothing underneath has to
+// repaint while the fade runs. It sits beside the target (a sibling stacked just
+// above it), never inside it: a QStackedWidget raises the page it switches to above
+// its other children, which would otherwise flash the new page before the fade.
 class SnapshotFade final : public QWidget {
     Q_OBJECT
 public:
@@ -49,9 +56,15 @@ protected:
 
 private:
     void begin();
-    QPixmap m_snapshot;
+    QPointer<QWidget> m_target;
+    QPixmap m_before;
+    QPixmap m_after;
     qreal m_opacity = 1.0;
     QVariantAnimation *m_animation;
+    struct Trace;
+    Trace *m_trace = nullptr;   // frame log, only with ANIME_NEXUS_MOTION_TRACE set
+public:
+    ~SnapshotFade() override;
 };
 
 // A rounded highlight that glides between the checked buttons of a group, so a
