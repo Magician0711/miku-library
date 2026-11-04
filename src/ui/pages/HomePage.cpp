@@ -1,6 +1,7 @@
 #include "HomePage.h"
 
 #include "ui/ImageLoader.h"
+#include "ui/Motion.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "net/BangumiClient.h"
@@ -47,7 +48,8 @@ HomePage::HomePage(BangumiClient *bangumi, ImageLoader *images, QWidget *parent)
         button->setCheckable(true); button->setCursor(Qt::PointingHandCursor);
         m_tabs->addButton(button,day); tabRow->addWidget(button);
     }
-    connect(m_tabs,&QButtonGroup::idClicked,this,&HomePage::showDay);
+    new Motion::SlidingIndicator(dayBar,m_tabs->buttons(),Motion::SlidingIndicator::Look::Outlined,8);
+    connect(m_tabs,&QButtonGroup::idClicked,this,[this](int day){Motion::crossfade(m_results);showDay(day);});
     auto *dayLine=new QHBoxLayout;
     dayLine->addStretch(1); dayLine->addWidget(dayBar); dayLine->addStretch(1);
     layout->addLayout(dayLine);
@@ -55,7 +57,8 @@ HomePage::HomePage(BangumiClient *bangumi, ImageLoader *images, QWidget *parent)
     m_grid=new CardGrid(m_images);
     connect(m_grid,&CardGrid::cardClicked,this,&HomePage::animeSelected);
     m_empty=new EmptyState("calendar",QStringLiteral("正在准备放送表"),QStringLiteral("新一周的故事，即将开始。"),this);
-    layout->addWidget(overlayStack(scrollArea(m_grid),m_empty,this),1);
+    m_results=overlayStack(scrollArea(m_grid),m_empty,this);
+    layout->addWidget(m_results,1);
     updateTabs();
 }
 

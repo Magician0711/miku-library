@@ -30,6 +30,8 @@ class QLabel;
 class QTimer;
 class QToolButton;
 class StatusDot;
+class UpdateChecker;
+class UpdatePanel;
 
 class MainWindow : public FramelessWindow {
     Q_OBJECT
@@ -52,8 +54,8 @@ private:
     void onFollowChanged(const AnimeSubject &subject, bool following);
     void onDownloadRequested(const AnimeSubject &subject,const ResourceResult &result);
     void selectPage(int index);
-    void setEngineStatus(const QString &text);
-    void updateDownloadBadge();
+    // Sidebar status: downloader name, live transfer speeds and the active-task badge.
+    void updateStatus();
     void setAppearance(Theme::Mode mode);
     void updateThemeButton();
     void showDownloaderMenu(QWidget *anchor);
@@ -73,10 +75,13 @@ private:
     QStackedWidget *m_stack;
     QVector<QPushButton *> m_navButtons;
     QLabel *m_engineStatus;
+    QLabel *m_transferStatus;
     StatusDot *m_engineDot;
     QLabel *m_downloadBadge;
     QTimer *m_badgeTimer;
     QToolButton *m_themeButton;
+    UpdatePanel *m_updatePanel = nullptr;
+    UpdateChecker *m_updateChecker = nullptr;
 
     HomePage *m_home;
     SearchPage *m_search;

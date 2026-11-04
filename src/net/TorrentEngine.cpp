@@ -271,10 +271,15 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
     QVector<DownloadTask> tasks;
     if (!m_session)
         return tasks;
-    const auto handles = m_session->get_torrents();
-    tasks.reserve(static_cast<int>(handles.size()));
-    for (const auto &handle : handles) {
-        const auto status = handle.status();
+    // One request for every torrent's status instead of several blocking
+    // round-trips per torrent; this runs several times a second.
+    const auto statuses = m_session->get_torrent_status([](const lt::torrent_status &) { return true; },
+        lt::torrent_handle::query_name | lt::torrent_handle::query_save_path);
+    QSet<QString> autoStopped;
+    for (const auto &entry : m_entries)
+        if (entry.autoStopped) autoStopped.insert(entry.infoHash);
+    tasks.reserve(static_cast<int>(statuses.size()));
+    for (const auto &status : statuses) {
         DownloadTask task;
         task.title = QString::fromStdString(status.name);
         task.savePath = QString::fromStdString(status.save_path);
@@ -292,14 +297,16 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
         } else {
             task.eta = -1;
         }
-        task.infoHash = hashString(handle);
+        task.infoHash = hashToQString(status.info_hashes);
         task.qbtHash = task.infoHash;
 
-        const bool paused = static_cast<bool>(handle.flags() & lt::torrent_flags::paused);
+        const bool paused = static_cast<bool>(status.flags & lt::torrent_flags::paused);
+        // A task stopped on completion may have released its piece state; trust
+        // the files on disk instead of the (reset) progress figure.
         bool cachedComplete=false;
-        for(const auto &entry:m_entries)if(entry.infoHash==task.infoHash&&entry.autoStopped&&paused) {
-            cachedComplete=true;bool hasFile=false;
-            for(const auto &f:filesFor(task.infoHash))if(f.wanted) {
+        if(paused&&autoStopped.contains(task.infoHash)) {
+            bool hasFile=false;cachedComplete=true;
+            for(const auto &f:filesOf(status.handle,task.savePath,true))if(f.wanted) {
                 hasFile=true;if(f.size>0&&f.downloaded<f.size)cachedComplete=false;
             }
             cachedComplete=cachedComplete&&hasFile;
@@ -340,24 +347,30 @@ QVector<DownloadFile> TorrentEngine::filesFor(const QString &infoHash) const
     if(!m_session)return files;
     for(const auto &handle:m_session->get_torrents()) {
         if(hashString(handle).compare(infoHash,Qt::CaseInsensitive)!=0)continue;
-        const auto info=handle.torrent_file();if(!info)return files;
-        std::vector<std::int64_t> progress;handle.file_progress(progress);
-        const auto priorities=handle.get_file_priorities();
-        const auto &storage=info->layout();
         bool stopped=false;
         for(const auto &entry:m_entries)if(entry.infoHash.compare(infoHash,Qt::CaseInsensitive)==0&&entry.autoStopped
             &&bool(handle.flags()&lt::torrent_flags::paused))stopped=true;
-        const QString root=QDir(QString::fromStdString(handle.status().save_path)).absolutePath();
-        for(lt::file_index_t n{0};n<storage.end_file();++n) {
-            const QString path=QDir::cleanPath(QDir(root).absoluteFilePath(QString::fromStdString(storage.file_path(n))));
-            if(!path.startsWith(root+"/",Qt::CaseInsensitive))continue;
-            qint64 downloaded=int(n)<progress.size()?progress[int(n)]:0;
-            const QFileInfo disk(path);
-            if(stopped&&disk.isFile()&&disk.size()==storage.file_size(n))downloaded=storage.file_size(n);
-            files.append({path,storage.file_size(n),downloaded,
-                int(n)>=priorities.size()||priorities[int(n)]!=lt::dont_download});
-        }
-        break;
+        return filesOf(handle,QString::fromStdString(handle.status(lt::torrent_handle::query_save_path).save_path),stopped);
+    }
+    return files;
+}
+
+QVector<DownloadFile> TorrentEngine::filesOf(const lt::torrent_handle &handle,const QString &savePath,bool stopped) const
+{
+    QVector<DownloadFile> files;
+    const auto info=handle.torrent_file();if(!info)return files;
+    std::vector<std::int64_t> progress;handle.file_progress(progress);
+    const auto priorities=handle.get_file_priorities();
+    const auto &storage=info->layout();
+    const QString root=QDir(savePath).absolutePath();
+    for(lt::file_index_t n{0};n<storage.end_file();++n) {
+        const QString path=QDir::cleanPath(QDir(root).absoluteFilePath(QString::fromStdString(storage.file_path(n))));
+        if(!path.startsWith(root+"/",Qt::CaseInsensitive))continue;
+        qint64 downloaded=int(n)<progress.size()?progress[int(n)]:0;
+        const QFileInfo disk(path);
+        if(stopped&&disk.isFile()&&disk.size()==storage.file_size(n))downloaded=storage.file_size(n);
+        files.append({path,storage.file_size(n),downloaded,
+            int(n)>=priorities.size()||priorities[int(n)]!=lt::dont_download});
     }
     return files;
 }

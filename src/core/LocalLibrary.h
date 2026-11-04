@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Grouping.h"
+#include <QHash>
 #include <QObject>
 
 struct LibraryFile {
@@ -30,6 +31,25 @@ struct LibraryItem {
     QVector<LibraryFile> files;
 };
 
+// What the user last chose for an anime: the release group and the kind of
+// release. One-click downloads start from it and the update check follows it.
+struct DownloadPreference {
+    QString group;            // release group display name; empty = none
+    QString resolution;       // e.g. "1080p"; empty = any
+    QString language;         // subtitle language tag, "bilingual", or empty
+    QString subtitleType;     // "internal", "hardcoded", ...; empty = any
+    int ignoredThrough = 0;   // update notices up to this episode were dismissed
+    bool matches(const ResourceResult &resource) const;
+};
+
+// A followed release group to check for episodes after the newest one held.
+struct UpdateTarget {
+    AnimeSubject subject;
+    DownloadPreference preference;
+    int season = 1;
+    int after = 0;            // newest episode already downloaded, queued or ignored
+};
+
 struct PlannedDownload {
     ResourceResult resource;
     int season = 1;
@@ -56,8 +76,17 @@ public:
     bool groupHasHistory(int subjectId,const QString &group) const;
     QSet<QString> claimedEpisodes(int subjectId,const QString &group,int season) const;
     QVector<Release> localReleases(int subjectId) const;
+    // Stored preference, or one derived from the anime's most recent download.
+    DownloadPreference preference(int subjectId) const;
+    bool setPreference(int subjectId,const DownloadPreference &preference,QString *error=nullptr);
+    // Anime whose preferred group may have new episodes: has numbered downloads in
+    // that group and is not complete according to its episode count.
+    QVector<UpdateTarget> updateTargets() const;
+    // Episodes after target.after that the given search results would add.
+    QVector<PlannedDownload> newEpisodes(const UpdateTarget &target,const QVector<ResourceResult> &results,
+                                         QVector<ResourceResult> *candidates=nullptr) const;
     QVector<PlannedDownload> plan(const AnimeSubject &subject,const QVector<ResourceResult> &resources,
-                                  QString *reason=nullptr,bool preferSingles=false) const;
+                                  QString *reason=nullptr,bool preferSingles=false,const EpisodeRange &range={}) const;
     bool put(const LibraryItem &item,QString *error=nullptr);
     void reconcile(const QString &hash,const QVector<DownloadFile> &files,bool completed,const QString &phase);
     void markRemoved(const QString &hash);
@@ -71,7 +100,14 @@ signals:
 
 private:
     QSet<QString> availableEpisodes(const LibraryItem &item) const;
+    void rebuildIndex();
+    static QString identity(int subjectId,const ResourceResult &resource);
     QString m_path;
     QVector<LibraryItem> m_items;
+    // Lookups run for every resource row; keep them O(1). Rebuilt whenever
+    // records are added, replaced or reloaded (status updates keep keys stable).
+    QHash<int,DownloadPreference> m_preferences;
+    QHash<QString,qsizetype> m_byKey;
+    QHash<QString,QString> m_byIdentity;
     bool m_ready = false;
 };

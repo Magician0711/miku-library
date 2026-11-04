@@ -54,6 +54,14 @@ bool LocalLibrary::load(QString *error)
     const auto document=QJsonDocument::fromJson(file.readAll(),&parseError);
     if(parseError.error!=QJsonParseError::NoError||!document.isObject()
         ||document.object().value("schema_version").toInt()!=1){if(error)*error=QStringLiteral("本地番剧目录格式无效，原文件已保留。");return false;}
+    m_preferences.clear();
+    for(const auto &value:document.object().value("preferences").toArray()) {
+        const auto o=value.toObject();
+        DownloadPreference p;p.group=o.value("group").toString();p.resolution=o.value("resolution").toString();
+        p.language=o.value("language").toString();p.subtitleType=o.value("subtitle_type").toString();
+        p.ignoredThrough=o.value("ignored_through").toInt();
+        if(o.value("subject_id").toInt()>0)m_preferences.insert(o.value("subject_id").toInt(),p);
+    }
     for(const auto &value:document.object().value("downloads").toArray()) {
         const auto o=value.toObject(),s=o.value("subject").toObject(),r=o.value("resource").toObject();
         LibraryItem item;item.key=o.value("key").toString();item.subject.bangumiId=s.value("id").toInt();
@@ -85,7 +93,28 @@ bool LocalLibrary::load(QString *error)
         item.episodes=recordedEpisodes(item);
         if(!item.key.isEmpty()&&item.subject.bangumiId>0)m_items.append(item);
     }
+    rebuildIndex();
     m_ready=true;return true;
+}
+
+QString LocalLibrary::identity(int subjectId,const ResourceResult &resource)
+{
+    // A merged row may choose a different site's hash; identity ignores the
+    // per-search anime id so a reservation survives search arrival order.
+    auto row=resource;row.animeId.clear();
+    return QString::number(subjectId)+QLatin1Char('\n')+row.rowKey();
+}
+
+void LocalLibrary::rebuildIndex()
+{
+    m_byKey.clear();m_byIdentity.clear();
+    m_byKey.reserve(m_items.size());m_byIdentity.reserve(m_items.size());
+    for(qsizetype i=0;i<m_items.size();++i) {
+        const auto &item=m_items.at(i);
+        if(!m_byKey.contains(item.key))m_byKey.insert(item.key,i);
+        const QString id=identity(item.subject.bangumiId,item.resource);
+        if(!m_byIdentity.contains(id))m_byIdentity.insert(id,item.key);
+    }
 }
 
 bool LocalLibrary::save(QString *error) const
@@ -107,7 +136,12 @@ bool LocalLibrary::save(QString *error) const
             {"downloader",i.downloader},{"external_program",i.externalProgram},{"external_arguments",i.externalArguments},{"torrent_file",i.torrentFile},{"remote_id",i.remoteId},{"attempted_sources",strings(i.attemptedSources)}});
     }
     QDir().mkpath(QFileInfo(m_path).absolutePath());
-    QSaveFile file(m_path);const auto data=QJsonDocument(QJsonObject{{"schema_version",1},{"downloads",entries}}).toJson();
+    QJsonArray preferences;
+    for(auto it=m_preferences.cbegin();it!=m_preferences.cend();++it)
+        preferences.append(QJsonObject{{"subject_id",it.key()},{"group",it->group},{"resolution",it->resolution},
+            {"language",it->language},{"subtitle_type",it->subtitleType},{"ignored_through",it->ignoredThrough}});
+    QSaveFile file(m_path);
+    const auto data=QJsonDocument(QJsonObject{{"schema_version",1},{"downloads",entries},{"preferences",preferences}}).toJson();
     if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit()) {
         if(error)*error=file.errorString();return false;
     }
@@ -116,19 +150,17 @@ bool LocalLibrary::save(QString *error) const
 
 QString LocalLibrary::itemKey(int subjectId,const ResourceResult &r) const
 {
-    // A merged row may choose a different site's hash. Keep the reservation
-    // stable across that selection and across later search arrival order.
-    auto row=r;row.animeId.clear();
-    for(const auto &item:m_items)if(item.subject.bangumiId==subjectId) {
-        auto existing=item.resource;existing.animeId.clear();
-        if(existing.rowKey()==row.rowKey())return item.key;
-    }
+    if(const auto found=m_byIdentity.constFind(identity(subjectId,r));found!=m_byIdentity.cend())return found.value();
     const QString raw=QString::number(subjectId)+"|"+releaseGroupKey(r.releaseGroup)+"|"+fingerprint(r);
     return QString::fromLatin1(QCryptographicHash::hash(raw.toUtf8(),QCryptographicHash::Sha256).toHex());
 }
 
 std::optional<LibraryItem> LocalLibrary::item(const QString &key) const
-{for(const auto &i:m_items)if(i.key==key)return i;return std::nullopt;}
+{
+    const auto found=m_byKey.constFind(key);
+    if(found==m_byKey.cend())return std::nullopt;
+    return m_items.at(found.value());
+}
 
 QStringList LocalLibrary::playableFiles(const LibraryItem &item) const
 {QStringList out;for(const auto &f:item.files)if(fileReady(f)&&isVideoFile(f.path))out.append(f.path);return out;}
@@ -197,6 +229,84 @@ QSet<QString> LocalLibrary::availableEpisodes(const LibraryItem &item) const
     return available;
 }
 
+bool DownloadPreference::matches(const ResourceResult &resource) const
+{
+    if(!group.isEmpty()&&releaseGroupKey(resource.releaseGroup)!=releaseGroupKey(group))return false;
+    if(!resolution.isEmpty()&&resource.tags.resolution!=resolution)return false;
+    if(!subtitleType.isEmpty()&&resource.tags.subtitleType!=subtitleType)return false;
+    const auto langs=resource.tags.subtitleLang.split(',',Qt::SkipEmptyParts);
+    if(language=="bilingual")return langs.contains("zh-Hans")&&langs.contains("zh-Hant");
+    return language.isEmpty()||langs.contains(language);
+}
+
+DownloadPreference LocalLibrary::preference(int id) const
+{
+    if(const auto stored=m_preferences.constFind(id);stored!=m_preferences.cend())return stored.value();
+    // Downloads made before preferences existed: follow the latest one.
+    DownloadPreference derived;
+    for(auto it=m_items.crbegin();it!=m_items.crend();++it)
+        if(it->subject.bangumiId==id&&!it->resource.releaseGroup.isEmpty()&&it->resource.releaseGroup!=kUnknownGroup) {
+            derived.group=it->resource.releaseGroup;derived.resolution=it->resource.tags.resolution;
+            derived.language=it->resource.tags.subtitleLang.section(',',0,0);
+            derived.subtitleType=it->resource.tags.subtitleType;
+            break;
+        }
+    return derived;
+}
+
+bool LocalLibrary::setPreference(int id,const DownloadPreference &preference,QString *error)
+{
+    if(!m_ready){if(error)*error=QStringLiteral("本地目录尚未成功读取。");return false;}
+    const auto before=m_preferences;
+    m_preferences.insert(id,preference);
+    if(!save(error)){m_preferences=before;return false;}
+    return true;
+}
+
+QVector<UpdateTarget> LocalLibrary::updateTargets() const
+{
+    QVector<UpdateTarget> out;QSet<int> seen;
+    for(auto it=m_items.crbegin();it!=m_items.crend();++it) {
+        const int id=it->subject.bangumiId;
+        if(seen.contains(id))continue;
+        seen.insert(id);
+        UpdateTarget target;target.preference=preference(id);
+        if(target.preference.group.isEmpty())continue;
+        const QString key=releaseGroupKey(target.preference.group);
+        // Follow the newest season this group was downloaded in.
+        target.season=0;
+        for(const auto &i:m_items)if(i.subject.bangumiId==id&&i.groupKey==key){target.season=qMax(target.season,i.season);target.subject=i.subject;}
+        if(target.season==0)continue;
+        // Continue from the newest episode ever taken from this group, even if it was
+        // watched and deleted since; failed or cancelled tasks never count.
+        int newest=0;
+        for(const auto &i:m_items)
+            if(i.subject.bangumiId==id&&i.groupKey==key&&i.season==target.season&&(i.complete||(i.phase!="error"&&i.phase!="cancelled")))
+                for(const auto &ep:recordedEpisodes(i))newest=qMax(newest,int(ep.toDouble()));
+        if(newest<=0)continue;                                     // nothing numbered to continue from
+        if(target.subject.episodeCount>0&&newest>=target.subject.episodeCount)continue;   // complete
+        target.after=qMax(newest,target.preference.ignoredThrough);
+        out.append(target);
+    }
+    return out;
+}
+
+QVector<PlannedDownload> LocalLibrary::newEpisodes(const UpdateTarget &target,const QVector<ResourceResult> &results,
+                                                   QVector<ResourceResult> *candidates) const
+{
+    QVector<ResourceResult> kept;
+    const auto keys=subjectKeys(target.subject);
+    for(const auto &r:results) {
+        if(!r.animeId.isEmpty()&&r.animeId!=QString::number(target.subject.bangumiId))continue;
+        if(!target.preference.matches(r)||!isRelevant(r.title,keys))continue;
+        const auto season=parseSeason(r.title);
+        if(season&&*season!=target.season)continue;
+        kept.append(r);
+    }
+    if(candidates)*candidates=kept;
+    return plan(target.subject,kept,nullptr,false,{target.after+1,0});
+}
+
 QSet<QString> LocalLibrary::claimedEpisodes(int id,const QString &group,int season) const
 {
     QSet<QString> out;const auto key=releaseGroupKey(group);
@@ -242,12 +352,19 @@ int LocalLibrary::subjectSeason(const AnimeSubject &s)
     return 1;
 }
 
-QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QVector<ResourceResult> &resources,QString *reason,bool preferSingles) const
+QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QVector<ResourceResult> &resources,QString *reason,bool preferSingles,const EpisodeRange &range) const
 {
     QVector<Release> releases=annotate(resources);
-    std::sort(releases.begin(),releases.end(),[preferSingles](const Release &a,const Release &b) {
+    auto inRange=[&range](const QStringList &episodes) {
+        if(!range.active())return episodes;
+        QStringList kept;for(const auto &ep:episodes)if(range.contains(ep))kept.append(ep);
+        return kept;
+    };
+    // Prefer the release covering most of the requested window, not the largest
+    // collection overall: a 1000-episode pack should not win a request for ten.
+    std::sort(releases.begin(),releases.end(),[preferSingles,&inRange](const Release &a,const Release &b) {
         if(preferSingles&&a.isBatch!=b.isBatch)return !a.isBatch;
-        const int countA=episodeNumbers(a.episode).size(),countB=episodeNumbers(b.episode).size();
+        const int countA=inRange(episodeNumbers(a.episode)).size(),countB=inRange(episodeNumbers(b.episode)).size();
         if(countA!=countB)return countA>countB;
         if(quality(a.result)!=quality(b.result))return quality(a.result)>quality(b.result);
         if(a.result.publishTime!=b.result.publishTime)return a.result.publishTime>b.result.publishTime;
@@ -298,6 +415,20 @@ QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QV
             const int last=subject.episodeCount>0?qMin(subject.episodeCount,1899):1899;
             for(int n=1;n<=last;++n)only.append(QString::number(n));
         }
+        if(range.active()) {
+            // Outside the requested window: skip singles, and limit collections to
+            // the files inside it so a long pack never pulls the whole series.
+            if(!episodes.isEmpty()) {
+                const auto kept=inRange(episodes);
+                if(kept.isEmpty())continue;
+                if(kept.size()!=episodes.size()&&only.isEmpty())only=kept;
+                episodes=kept;
+            }
+            if(!only.isEmpty()) {
+                only=inRange(only);
+                if(only.isEmpty())continue;
+            }
+        }
         out.append({resource,season,episodes,only});
         for(const auto &ep:episodes)covered.insert(ep);
         if(release.isBatch&&episodes.isEmpty()) {
@@ -317,10 +448,11 @@ QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QV
 bool LocalLibrary::put(const LibraryItem &item,QString *error)
 {
     if(!m_ready){if(error)*error=QStringLiteral("本地目录尚未成功读取，已停止写入以保护原有记录。");return false;}
-    const auto before=m_items;bool replaced=false;
-    for(auto &i:m_items)if(i.key==item.key){i=item;replaced=true;break;}
-    if(!replaced)m_items.append(item);
-    if(!save(error)){m_items=before;return false;}
+    const auto before=m_items;
+    if(const auto found=m_byKey.constFind(item.key);found!=m_byKey.cend())m_items[found.value()]=item;
+    else m_items.append(item);
+    rebuildIndex();
+    if(!save(error)){m_items=before;rebuildIndex();return false;}
     emit changed();return true;
 }
 

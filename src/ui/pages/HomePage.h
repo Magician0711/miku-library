@@ -33,6 +33,7 @@ private:
     BangumiClient *m_bangumi;
     ImageLoader *m_images;
     CardGrid *m_grid;
+    QWidget *m_results;
     EmptyState *m_empty;
     QLabel *m_status;
     QButtonGroup *m_tabs;

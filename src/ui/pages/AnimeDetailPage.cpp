@@ -2,16 +2,23 @@
 
 #include "core/Catalog.h"
 #include "core/LocalLibrary.h"
+#include "core/TitleParser.h"
 #include "net/BangumiClient.h"
 #include "net/SearchAggregator.h"
 #include "ui/FlowLayout.h"
 #include "ui/Controls.h"
 #include "ui/ImageLoader.h"
+#include "ui/Motion.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 
 #include <QAction>
 #include <QCheckBox>
+#include <QDialog>
+#include <QGraphicsDropShadowEffect>
+#include <QGridLayout>
+#include <QScreen>
+#include <QSpinBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -22,6 +29,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -31,6 +39,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <array>
 #include <limits>
 
 namespace {
@@ -49,8 +58,192 @@ int collapsedHeight(QLabel *summary)
 
 QString groupTitle(const QString &name, qsizetype count)
 {
+    if (name == kUnknownGroup)
+        return QStringLiteral("未归档资源    %1 个").arg(count);
     return QStringLiteral("%1    %2 个资源").arg(name).arg(count);
 }
+
+// Options behind the ▾ half of 一键下载: subtitle, resolution and an episode
+// window. Every change re-runs the real download planner, so the estimate shown
+// is exactly what 开始下载 will queue.
+struct GroupDownloadOptions {
+    QString language;
+    QString subtitleType;
+    QString resolution;
+    EpisodeRange range;
+};
+
+QVector<ResourceResult> applyOptions(const QVector<ResourceResult> &resources, const GroupDownloadOptions &options)
+{
+    QVector<ResourceResult> out;
+    for (const auto &r : resources) {
+        const auto langs = r.tags.subtitleLang.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        if (options.language == QLatin1String("bilingual")) {
+            if (!langs.contains(QStringLiteral("zh-Hans")) || !langs.contains(QStringLiteral("zh-Hant"))) continue;
+        } else if (!options.language.isEmpty() && !langs.contains(options.language)) {
+            continue;
+        }
+        if (!options.subtitleType.isEmpty() && r.tags.subtitleType != options.subtitleType) continue;
+        if (!options.resolution.isEmpty() && r.tags.resolution != options.resolution) continue;
+        out.append(r);
+    }
+    return out;
+}
+
+class GroupDownloadPopup final : public QDialog {
+public:
+    using Preview = std::function<QString(const QVector<ResourceResult> &, const EpisodeRange &, bool *ready)>;
+
+    GroupDownloadPopup(QWidget *anchor, const QString &group, const QVector<ResourceResult> &resources, Preview preview,
+                       const GroupDownloadOptions &initial = {})
+        : QDialog(anchor->window(), Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
+        , m_anchor(anchor), m_resources(resources), m_preview(std::move(preview))
+    {
+        setObjectName("DownloaderPopup");
+        setAttribute(Qt::WA_TranslucentBackground);
+        auto *outer = new QVBoxLayout(this); outer->setContentsMargins(10, 8, 10, 14);
+        auto *panel = new QFrame(this); panel->setObjectName("DownloaderPopupPanel"); outer->addWidget(panel);
+        auto *shadow = new QGraphicsDropShadowEffect(panel);
+        shadow->setBlurRadius(18); shadow->setOffset(0, 3); shadow->setColor(Theme::c().shadow);
+        panel->setGraphicsEffect(shadow);
+        auto *body = new QVBoxLayout(panel); body->setContentsMargins(16, 14, 16, 14); body->setSpacing(12);
+        body->addWidget(label(QStringLiteral("下载选项"), "DownloaderPopupHeading", false, panel));
+        auto *title = label(group, "SettingsCardTitle", false, panel);
+        title->setTextFormat(Qt::PlainText);
+        body->addWidget(title);
+
+        QHash<QString, int> langs, types, resolutions;
+        QSet<int> episodes;
+        for (const auto &r : resources) {
+            const auto list = r.tags.subtitleLang.split(QLatin1Char(','), Qt::SkipEmptyParts);
+            for (const auto &lang : list) ++langs[lang];
+            if (list.contains(QStringLiteral("zh-Hans")) && list.contains(QStringLiteral("zh-Hant"))) ++langs[QStringLiteral("bilingual")];
+            if (!r.tags.subtitleType.isEmpty()) ++types[r.tags.subtitleType];
+            if (!r.tags.resolution.isEmpty()) ++resolutions[r.tags.resolution];
+        }
+        for (const auto &release : annotate(resources))
+            for (const auto &ep : episodeNumbers(release.episode)) episodes.insert(ep.toInt());
+
+        auto fill = [](SelectBox *box, const QString &any, const QVector<QPair<QString, QString>> &known, const QHash<QString, int> &counts) {
+            box->addItem(any, QString());
+            for (const auto &[value, name] : known)
+                if (counts.value(value) > 0) box->addItem(QStringLiteral("%1（%2）").arg(name).arg(counts.value(value)), value);
+            box->setEnabled(box->count() > 1);
+        };
+        m_language = new SelectBox(panel); m_language->setObjectName("GroupDownloadLanguage");
+        fill(m_language, QStringLiteral("不限语言"), {{"zh-Hans", QStringLiteral("简体中文")}, {"zh-Hant", QStringLiteral("繁体中文")},
+             {"bilingual", QStringLiteral("简繁都有")}, {"zh", QStringLiteral("中文")}, {"ja", QStringLiteral("日文")}, {"en", QStringLiteral("英文")}}, langs);
+        m_type = new SelectBox(panel); m_type->setObjectName("GroupDownloadSubtitleType");
+        fill(m_type, QStringLiteral("不限形式"), {{"internal", QStringLiteral("内封字幕")}, {"hardcoded", QStringLiteral("内嵌字幕")},
+             {"external", QStringLiteral("外挂字幕")}, {"ass", QStringLiteral("ASS")}, {"srt", QStringLiteral("SRT")}, {"pgs", QStringLiteral("PGS")}}, types);
+        m_resolution = new SelectBox(panel); m_resolution->setObjectName("GroupDownloadResolution");
+        fill(m_resolution, QStringLiteral("不限（自动选最高）"), {{"2160p", QStringLiteral("4K")}, {"1440p", QStringLiteral("1440p")},
+             {"1080p", QStringLiteral("1080p")}, {"720p", QStringLiteral("720p")}, {"480p", QStringLiteral("480p")}}, resolutions);
+
+        auto *form = new QGridLayout; form->setHorizontalSpacing(12); form->setVerticalSpacing(10);
+        form->addWidget(label(QStringLiteral("字幕"), "SettingTitle", false, panel), 0, 0);
+        auto *subtitleRow = new QHBoxLayout; subtitleRow->setSpacing(8);
+        subtitleRow->addWidget(m_language, 1); subtitleRow->addWidget(m_type, 1);
+        form->addLayout(subtitleRow, 0, 1);
+        form->addWidget(label(QStringLiteral("清晰度"), "SettingTitle", false, panel), 1, 0);
+        form->addWidget(m_resolution, 1, 1);
+
+        form->addWidget(label(QStringLiteral("集数"), "SettingTitle", false, panel), 2, 0);
+        auto *rangeRow = new QHBoxLayout; rangeRow->setSpacing(8);
+        m_first = new QSpinBox(panel); m_first->setObjectName("GroupDownloadFirst");
+        m_last = new QSpinBox(panel); m_last->setObjectName("GroupDownloadLast");
+        const int low = episodes.isEmpty() ? 1 : *std::min_element(episodes.cbegin(), episodes.cend());
+        const int high = episodes.isEmpty() ? 1 : *std::max_element(episodes.cbegin(), episodes.cend());
+        for (auto *box : {m_first, m_last}) {
+            box->setRange(1, 1899); box->setPrefix(QStringLiteral("第 ")); box->setSuffix(QStringLiteral(" 话"));
+            box->setEnabled(!episodes.isEmpty());
+        }
+        m_first->setValue(low); m_last->setValue(high);
+        rangeRow->addWidget(m_first, 1); rangeRow->addWidget(label(QStringLiteral("至"), "Faint", false, panel)); rangeRow->addWidget(m_last, 1);
+        form->addLayout(rangeRow, 2, 1);
+        auto *quick = new QHBoxLayout; quick->setSpacing(6);
+        auto addQuick = [&](const QString &text, int from, int to) {
+            auto *button = new QPushButton(text, panel); button->setObjectName("Ghost"); button->setCursor(Qt::PointingHandCursor);
+            button->setEnabled(!episodes.isEmpty());
+            connect(button, &QPushButton::clicked, this, [this, from, to] { m_first->setValue(from); m_last->setValue(to); });
+            quick->addWidget(button);
+        };
+        addQuick(QStringLiteral("全部 %1–%2 话").arg(low).arg(high), low, high);
+        if (high - low >= 12) addQuick(QStringLiteral("最新 12 话"), high - 11, high);
+        if (high - low >= 50) addQuick(QStringLiteral("最新 50 话"), high - 49, high);
+        quick->addStretch(1);
+        form->addLayout(quick, 3, 1);
+        form->setColumnStretch(1, 1);
+        body->addLayout(form);
+        if (episodes.isEmpty())
+            body->addWidget(label(QStringLiteral("这些资源都是集数未知的合集，将按合集内容下载。"), "SettingHint", true, panel));
+
+        m_summary = label(QString(), "DownloaderHint", true, panel);
+        m_summary->setObjectName("GroupDownloadSummary");
+        body->addWidget(m_summary);
+        auto *actions = new QHBoxLayout; actions->addStretch(1);
+        auto *cancel = new QPushButton(QStringLiteral("取消"), panel); cancel->setObjectName("Ghost");
+        m_start = new QPushButton(QStringLiteral("开始下载"), panel); m_start->setObjectName("Primary");
+        m_start->setIcon(Theme::icon("download", &Theme::Palette::accentInk)); m_start->setAutoDefault(true);
+        connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+        connect(m_start, &QPushButton::clicked, this, &QDialog::accept);
+        actions->addWidget(cancel); actions->addWidget(m_start);
+        body->addLayout(actions);
+
+        for (auto *box : {m_language, m_type, m_resolution})
+            connect(box, qOverload<int>(&QComboBox::currentIndexChanged), this, &GroupDownloadPopup::refresh);
+        connect(m_first, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) { if (m_last->value() < v) m_last->setValue(v); refresh(); });
+        connect(m_last, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) { if (m_first->value() > v) m_first->setValue(v); refresh(); });
+        // Start from the last choice made for this group, where it still applies.
+        for (const auto &[box, value] : {std::pair{m_language, initial.language}, {m_type, initial.subtitleType}, {m_resolution, initial.resolution}})
+            if (const int index = box->findData(value); !value.isEmpty() && index >= 0) box->setCurrentIndex(index);
+        setFixedWidth(460);
+        refresh();
+    }
+
+    GroupDownloadOptions options() const
+    {
+        GroupDownloadOptions o;
+        o.language = m_language->currentData().toString();
+        o.subtitleType = m_type->currentData().toString();
+        o.resolution = m_resolution->currentData().toString();
+        if (m_first->isEnabled()) o.range = {m_first->value(), m_last->value()};
+        return o;
+    }
+
+protected:
+    void showEvent(QShowEvent *event) override
+    {
+        QDialog::showEvent(event);
+        adjustSize();
+        const QRect anchor(m_anchor->mapToGlobal(QPoint(0, 0)), m_anchor->size());
+        const QRect available = m_anchor->screen()->availableGeometry().adjusted(4, 4, -4, -4);
+        const int x = qBound(available.left(), anchor.right() - width() + 10, qMax(available.left(), available.right() - width() + 1));
+        const int y = available.bottom() - anchor.bottom() >= height() ? anchor.bottom() + 2 : anchor.top() - height() - 2;
+        move(x, qBound(available.top(), y, qMax(available.top(), available.bottom() - height() + 1)));
+        m_start->setFocus(Qt::PopupFocusReason);
+    }
+
+private:
+    void refresh()
+    {
+        const auto o = options();
+        const auto filtered = applyOptions(m_resources, o);
+        bool ready = false;
+        const QString text = m_preview(filtered, o.range, &ready);
+        m_summary->setText(QStringLiteral("符合条件 %1 个资源 · %2").arg(filtered.size()).arg(text));
+        m_start->setEnabled(ready);
+    }
+
+    QWidget *m_anchor;
+    QVector<ResourceResult> m_resources;
+    Preview m_preview;
+    SelectBox *m_language, *m_type, *m_resolution;
+    QSpinBox *m_first, *m_last;
+    QLabel *m_summary;
+    QPushButton *m_start;
+};
+
 }
 
 AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *bangumi, Catalog *catalog,
@@ -120,6 +313,7 @@ AnimeDetailPage::AnimeDetailPage(SearchAggregator *aggregator, BangumiClient *ba
     section->addWidget(label(QStringLiteral("排序"),"Faint"),0,Qt::AlignVCenter);
     m_sort = new SelectBox();
     for (const auto &[text, data] : QVector<QPair<QString, QString>>{
+             {QStringLiteral("推荐"), QStringLiteral("popular")},
              {QStringLiteral("最近更新"), QStringLiteral("latest")}, {QStringLiteral("做种最多"), QStringLiteral("seeders")},
              {QStringLiteral("资源最多"), QStringLiteral("count")}, {QStringLiteral("名称"), QStringLiteral("name")}})
         m_sort->addItem(text, data);
@@ -211,9 +405,19 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
     m_moreButton = new QPushButton(QStringLiteral("展开简介"), this);
     m_moreButton->setObjectName(QStringLiteral("Ghost"));
     connect(m_moreButton, &QPushButton::clicked, this, [this] {
-        const bool expanded = m_summary->maximumHeight() > collapsedHeight(m_summary);
-        m_summary->setMaximumHeight(expanded ? collapsedHeight(m_summary) : QWIDGETSIZE_MAX);
+        const int collapsed = collapsedHeight(m_summary);
+        const bool expanded = m_summary->maximumHeight() > collapsed;
+        const int full = qMax(collapsed, m_summary->heightForWidth(m_summary->width()));
         m_moreButton->setText(expanded ? QStringLiteral("展开简介") : QStringLiteral("收起简介"));
+        auto *animation = new QPropertyAnimation(m_summary, "maximumHeight", m_summary);
+        animation->setDuration(Motion::duration(Motion::Normal));
+        animation->setStartValue(expanded ? m_summary->height() : collapsed);
+        animation->setEndValue(expanded ? collapsed : full);
+        animation->setEasingCurve(QEasingCurve::OutCubic);
+        connect(animation, &QPropertyAnimation::finished, m_summary, [this, expanded] {
+            if (!expanded) m_summary->setMaximumHeight(QWIDGETSIZE_MAX);
+        });
+        animation->start(QAbstractAnimation::DeleteWhenStopped);
     });
     actions->addWidget(m_moreButton);
     actions->addStretch(1);
@@ -322,10 +526,12 @@ void AnimeDetailPage::buildFilters(QVBoxLayout *layout)
     auto *reset=new QPushButton(QStringLiteral("重置筛选")); reset->setObjectName("Ghost"); tools->addWidget(reset);
     v->addLayout(tools);
 
+    // Changes the user makes dissolve into the new list; background batches do not.
+    auto userRender = [this] { m_fadeNextRender = true; scheduleRender(); };
     for (auto *combo : {m_season, m_kind, m_resolution, m_subtitleFilter, m_sort, m_downloadStatus})
-        connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), this, &AnimeDetailPage::scheduleRender);
-    connect(m_hdrOnly, &QCheckBox::toggled, this, &AnimeDetailPage::scheduleRender);
-    connect(m_text, &QLineEdit::textChanged, this, &AnimeDetailPage::scheduleRender);
+        connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), this, userRender);
+    connect(m_hdrOnly, &QCheckBox::toggled, this, userRender);
+    connect(m_text, &QLineEdit::textChanged, this, userRender);
     connect(reset, &QPushButton::clicked, this, &AnimeDetailPage::resetFilters);
 
     layout->addWidget(m_filterBar);
@@ -597,8 +803,10 @@ QWidget *AnimeDetailPage::buildResourceRow(const Release &release, const RowStat
     action->setEnabled(state.ready || (!state.active && !link.isEmpty() && !m_localOnly));
     const bool ready = state.ready;
     connect(action, &QPushButton::clicked, this, [this, result, ready] {
-        if (ready) emit playRequested(m_subject, result);
-        else emit downloadRequested(m_subject, result);
+        if (ready) { emit playRequested(m_subject, result); return; }
+        rememberChoice(result.releaseGroup, std::array{result.tags.subtitleLang.section(QLatin1Char(','), 0, 0),
+                                                       result.tags.subtitleType, result.tags.resolution});
+        emit downloadRequested(m_subject, result);
     });
     buttons->addWidget(action);
     rowLayout->addLayout(buttons);
@@ -649,8 +857,9 @@ void AnimeDetailPage::render()
     for(const auto &r:m_releases)
         if(passes(r,filter))candidates[releaseGroupKey(r.result.releaseGroup)].append(r.result);
 
-    const auto groups = groupReleases(shown, sortKey());
+    const auto groups = groupReleases(shown, sortKey(), subjectKeys(m_subject));
     const int scroll=m_scroll?m_scroll->verticalScrollBar()->value():0;
+    if(std::exchange(m_fadeNextRender,false)) Motion::crossfade(m_groupsBox, Motion::Fast);
     m_groupsBox->setUpdatesEnabled(false);
     clearGroups();
     const int limit = groups.size() < m_groupLimit ? static_cast<int>(groups.size()) : m_groupLimit;
@@ -662,7 +871,9 @@ void AnimeDetailPage::render()
         moduleLayout->setContentsMargins(0, 0, 0, 0);
         moduleLayout->setSpacing(0);
 
-        const bool expanded = m_groupExpanded.value(group.name, i < kInitialGroups);
+        const bool unarchived = group.name == kUnknownGroup;
+        // The merged bucket of unattributed releases stays folded unless opened.
+        const bool expanded = m_groupExpanded.value(group.name, i < kInitialGroups && !unarchived);
         const bool showAll = m_groupShowAll.value(group.name, false);
         auto *header = new QPushButton(groupTitle(group.name, group.releases.size()), module);
         header->setObjectName(QStringLiteral("GroupHeader"));
@@ -671,19 +882,38 @@ void AnimeDetailPage::render()
         header->setCursor(Qt::PointingHandCursor);
         header->setIcon(Theme::icon(expanded ? "chevron-down" : "chevron-right"));
         header->setIconSize(QSize(18,18));
+        if (unarchived)
+            header->setToolTip(QStringLiteral("未能识别字幕组的资源合并显示在这里，可单独下载，不支持一键下载。"));
         auto *groupBar=new QHBoxLayout;
         groupBar->setContentsMargins(0,0,14,0);groupBar->setSpacing(8);
         groupBar->addWidget(header,1);
         const bool history=m_library->groupHasHistory(id,group.name);
         auto *bulk=new QPushButton(history?QStringLiteral("更新"):QStringLiteral("一键下载"),module);
         bulk->setObjectName("GroupDownload");
+        bulk->setProperty("split",true);
+        bulk->setVisible(!unarchived);
         bulk->setIcon(Theme::icon(history?"refresh":"download",&Theme::Palette::accentText));
         bulk->setAccessibleName(group.name+QStringLiteral(" ")+bulk->text());
         const auto groupCandidates=candidates.value(releaseGroupKey(group.name));
         bulk->setEnabled(!m_searching&&!groupCandidates.isEmpty()&&group.name!=kUnknownGroup);
         bulk->setToolTip(m_searching?QStringLiteral("正在检索最新话数…"):QStringLiteral("下载本字幕组缺少的正片，同集只选择一个版本"));
-        connect(bulk,&QPushButton::clicked,this,[this,groupCandidates]{emit groupDownloadRequested(m_subject,groupCandidates);});
-        groupBar->addWidget(bulk);
+        connect(bulk,&QPushButton::clicked,this,[this,groupCandidates,name=group.name]{
+            rememberChoice(name,std::nullopt);
+            emit groupDownloadRequested(m_subject,groupCandidates,{});
+        });
+        // ▾: choose subtitle, resolution and episode window before downloading.
+        auto *more=new QPushButton(module);
+        more->setObjectName("GroupDownloadOptions");
+        more->setIcon(Theme::icon("chevron-down",&Theme::Palette::accentText));
+        more->setToolTip(QStringLiteral("下载选项：字幕、清晰度、集数范围"));
+        more->setAccessibleName(group.name+QStringLiteral(" 下载选项"));
+        more->setCursor(Qt::PointingHandCursor);
+        more->setEnabled(bulk->isEnabled());
+        more->setVisible(!unarchived);
+        connect(more,&QPushButton::clicked,this,[this,more,groupCandidates,name=group.name]{showGroupOptions(more,name,groupCandidates);});
+        auto *split=new QHBoxLayout; split->setSpacing(0);
+        split->addWidget(bulk); split->addWidget(more);
+        groupBar->addLayout(split);
         moduleLayout->addLayout(groupBar);
 
         auto *body = new QWidget(module);
@@ -695,7 +925,7 @@ void AnimeDetailPage::render()
 
         connect(header, &QPushButton::toggled, this, [this, header, body, name=group.name](bool on) {
             m_groupExpanded.insert(name, on);
-            body->setVisible(on);
+            Motion::setExpanded(body, on);
             header->setIcon(Theme::icon(on ? "chevron-down" : "chevron-right"));
         });
 
@@ -714,6 +944,7 @@ void AnimeDetailPage::render()
             bodyLayout->addWidget(more);
             connect(more, &QPushButton::clicked, this, [this, key=group.name] {
                 m_groupShowAll.insert(key, !m_groupShowAll.value(key, false));
+                m_fadeNextRender = true;
                 render();
             });
         }
@@ -728,6 +959,7 @@ void AnimeDetailPage::render()
         moreGroups->ensurePolished(); moreGroups->setFixedHeight(42);
         connect(moreGroups, &QPushButton::clicked, this, [this] {
             m_groupLimit = std::numeric_limits<int>::max();
+            m_fadeNextRender = true;
             render();
         });
         m_groupsLayout->addWidget(moreGroups);
@@ -754,6 +986,49 @@ void AnimeDetailPage::render()
                          QStringLiteral("试试放宽画质或字幕条件，或点击「重置筛选」。"));
         m_empty->show();
     }
+}
+
+void AnimeDetailPage::showGroupOptions(QWidget *anchor, const QString &group, const QVector<ResourceResult> &candidates)
+{
+    const AnimeSubject subject = m_subject;
+    const auto saved = m_library->preference(subject.bangumiId);
+    GroupDownloadOptions initial;
+    if (releaseGroupKey(saved.group) == releaseGroupKey(group))
+        initial = {saved.language, saved.subtitleType, saved.resolution, {}};
+    GroupDownloadPopup popup(anchor, group, candidates,
+        [this, subject](const QVector<ResourceResult> &resources, const EpisodeRange &range, bool *ready) {
+            QString reason;
+            const auto plans = m_library->plan(subject, resources, &reason, false, range);
+            *ready = !plans.isEmpty();
+            if (plans.isEmpty())
+                return reason.isEmpty() ? QStringLiteral("没有需要下载的集数（已下载、下载中或无对应资源）") : reason;
+            int episodes = 0;
+            for (const auto &plan : plans)
+                episodes += plan.episodes.isEmpty() ? plan.onlyEpisodes.size() : plan.episodes.size();
+            return episodes > 0 ? QStringLiteral("预计新建 %1 个任务，共 %2 集").arg(plans.size()).arg(episodes)
+                                : QStringLiteral("预计新建 %1 个任务").arg(plans.size());
+        });
+    if (popup.exec() != QDialog::Accepted || m_subject.bangumiId != subject.bangumiId)
+        return;
+    const auto options = popup.options();
+    rememberChoice(group, std::array{options.language, options.subtitleType, options.resolution});
+    emit groupDownloadRequested(m_subject, applyOptions(candidates, options), options.range);
+}
+
+void AnimeDetailPage::rememberChoice(const QString &group, std::optional<std::array<QString, 3>> kind)
+{
+    if (group.isEmpty() || group == kUnknownGroup || m_subject.bangumiId == 0)
+        return;
+    auto preference = m_library->preference(m_subject.bangumiId);
+    const bool sameGroup = releaseGroupKey(preference.group) == releaseGroupKey(group);
+    if (!sameGroup) preference = {};          // a new group starts with no filters or dismissals
+    preference.group = group;
+    if (kind) {
+        preference.language = (*kind)[0];
+        preference.subtitleType = (*kind)[1];
+        preference.resolution = (*kind)[2];
+    }
+    m_library->setPreference(m_subject.bangumiId, preference);
 }
 
 void AnimeDetailPage::clearGroups()

@@ -231,9 +231,13 @@ EpisodeInfo parseEpisode(const QString &title)
             masked.append({code.capturedStart(),code.capturedLength()});
     }
     for(const auto &[start,length]:masked)for(int i=start;i<start+length;++i)text[i]=QChar(' ');
+    // Long-running series (One Piece, Conan, ...) use four-digit numbers and
+    // collections such as 1001-1050 or EP1001-EP1010. Years (2019-2020) and
+    // resolutions are never episode numbers.
     static const QVector<QRegularExpression> ranges = {
         QRegularExpression(QStringLiteral("第\\s*(\\d{1,4})\\s*[-~～至]\\s*(\\d{1,4})\\s*[话話集]")),
-        QRegularExpression(QStringLiteral("(?<![\\dA-Za-z.])(\\d{1,3})\\s*[-~～]\\s*(\\d{1,3})(?![\\dA-Za-z.])")),
+        QRegularExpression(QStringLiteral("(?<![A-Za-z0-9])EP?\\.?\\s*(\\d{1,4})\\s*[-~～]\\s*(?:EP?\\.?\\s*)?(\\d{1,4})(?![\\dA-Za-z])"), QRegularExpression::CaseInsensitiveOption),
+        QRegularExpression(QStringLiteral("(?<![\\dA-Za-z.])(\\d{1,4})\\s*[-~～]\\s*(\\d{1,4})(?![\\dA-Za-z.])")),
     };
     static const QSet<int> notEpisodes = {480, 576, 720, 1080, 1440, 2160, 4320};
     for (const auto &pattern : ranges) {
@@ -242,7 +246,7 @@ EpisodeInfo parseEpisode(const QString &title)
             const auto match = it.next();
             const int a = match.captured(1).toInt();
             const int b = match.captured(2).toInt();
-            if (a < b && !notEpisodes.contains(b))
+            if (a < b && b < 1900 && b - a < 1500 && !notEpisodes.contains(b))
                 return {match.captured(1) + QLatin1Char('-') + match.captured(2), true};
         }
     }
@@ -256,7 +260,7 @@ EpisodeInfo parseEpisode(const QString &title)
             QRegularExpression(QStringLiteral("第\\s*(\\d{1,4}(?:\\.5)?)\\s*[话話集]")),
             QRegularExpression(QStringLiteral("(?<![A-Za-z0-9])S\\d{1,2}E(\\d{1,4})(?![\\dA-Za-z])"), QRegularExpression::CaseInsensitiveOption),
             QRegularExpression(QStringLiteral("(?<![A-Za-z0-9])EP\\.?\\s*(\\d{1,4})(?![\\dA-Za-z])"), QRegularExpression::CaseInsensitiveOption),
-            QRegularExpression(QStringLiteral("[\\[【]\\s*(\\d{1,3}(?:\\.5)?)\\s*(?:v\\d)?\\s*(?:END|完|Fin)?\\s*[\\]】]"), QRegularExpression::CaseInsensitiveOption),
+            QRegularExpression(QStringLiteral("[\\[【]\\s*(\\d{1,4}(?:\\.5)?)\\s*(?:v\\d)?\\s*(?:END|完|Fin)?\\s*[\\]】]"), QRegularExpression::CaseInsensitiveOption),
             QRegularExpression(QStringLiteral("\\s[-–]\\s(\\d{1,4}(?:\\.5)?)(?:v\\d)?(?:\\s*END)?(?=[\\s\\[(（.]|$)"), QRegularExpression::CaseInsensitiveOption),
             // Bare E followed by 3+ digits is ambiguous with release IDs.
             // Long-running episode counts require EP, SxxExxx or 第xxx话.

@@ -20,6 +20,7 @@ class QHBoxLayout;
 class QVBoxLayout;
 class QScrollArea;
 class QPushButton;
+class QVariantAnimation;
 
 // Small rounded tag. Colours are palette roles, resolved while painting.
 class Chip : public QLabel {
@@ -96,7 +97,9 @@ private:
     QLabel *m_subtitle;
     QImage m_cover;
     bool m_keyboardFocus = false;
-    bool m_hover = false;
+    void animateHover(bool hover);
+    QVariantAnimation *m_hoverAnimation = nullptr;
+    qreal m_hoverLevel = 0;   // 0..1, eased in and out
 };
 
 class CardGrid : public QWidget {

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(AnimeNexusCpp VERSION 0.4.0 LANGUAGES CXX)
+project(AnimeNexusCpp VERSION 0.6.0 LANGUAGES CXX)
+# The single source of the version shown in About, the user agent and packages.
+add_compile_definitions(ANIME_NEXUS_VERSION="${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,14 +61,16 @@ qt_add_executable(AnimeNexus WIN32
     src/net/ExternalDownloader.cpp src/net/DownloaderRpc.cpp
     src/net/AnimeDownloads.cpp
     src/net/TorrentEngine.cpp
+    src/net/UpdateChecker.cpp
 
-    src/ui/Theme.cpp
+    src/ui/Theme.cpp src/ui/Motion.cpp
     src/ui/Overlays.cpp
     src/ui/Controls.cpp
     src/ui/FlowLayout.cpp
     src/ui/Widgets.cpp
     src/ui/ImageLoader.cpp
     src/ui/MainWindow.cpp
+    src/ui/UpdatePanel.cpp
     src/ui/FramelessWindow.cpp
     src/ui/pages/HomePage.cpp
     src/ui/pages/SearchPage.cpp
@@ -101,7 +105,7 @@ if (MSVC)
     target_compile_options(AnimeNexus PRIVATE /utf-8 /W3 /permissive-)
 endif()
 
-add_executable(WindowSmoke tests/window_smoke.cpp src/ui/FramelessWindow.cpp src/ui/Theme.cpp src/ui/Overlays.cpp)
+add_executable(WindowSmoke tests/window_smoke.cpp src/ui/FramelessWindow.cpp src/ui/Theme.cpp src/ui/Motion.cpp src/ui/Overlays.cpp)
 qt_add_resources(WindowSmoke "window_ui_icons" PREFIX "/" FILES ${UI_ICON_FILES})
 target_include_directories(WindowSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(WindowSmoke PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets dwmapi)
@@ -109,7 +113,7 @@ if (MSVC)
     target_compile_options(WindowSmoke PRIVATE /utf-8)
 endif()
 
-add_executable(ControlsSmoke tests/controls_smoke.cpp src/ui/Controls.cpp src/ui/Theme.cpp src/ui/Overlays.cpp)
+add_executable(ControlsSmoke tests/controls_smoke.cpp src/ui/Controls.cpp src/ui/Theme.cpp src/ui/Motion.cpp src/ui/Overlays.cpp)
 target_include_directories(ControlsSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(ControlsSmoke PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 qt_add_resources(ControlsSmoke "control_ui_icons" PREFIX "/" FILES ${UI_ICON_FILES})
@@ -134,7 +138,7 @@ if (MSVC)
     target_compile_options(DownloadSmoke PRIVATE /utf-8)
 endif()
 
-add_executable(UiAuditSmoke tests/ui_audit_smoke.cpp src/ui/Overlays.cpp src/ui/Theme.cpp
+add_executable(UiAuditSmoke tests/ui_audit_smoke.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Motion.cpp
     src/ui/Controls.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp
     src/net/HttpClient.cpp src/net/BangumiClient.cpp src/core/Models.cpp)
 target_include_directories(UiAuditSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
@@ -152,7 +156,7 @@ if (MSVC)
 endif()
 
 add_executable(SearchInputSmoke tests/search_input_smoke.cpp src/ui/pages/SearchPage.cpp
-    src/ui/Controls.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp
+    src/ui/Controls.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Motion.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp
     src/ui/ImageLoader.cpp src/net/HttpClient.cpp src/net/BangumiClient.cpp src/core/Models.cpp)
 target_include_directories(SearchInputSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 target_link_libraries(SearchInputSmoke PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
@@ -172,7 +176,7 @@ endif()
 add_executable(DetailLibrarySmoke tests/detail_library_smoke.cpp src/ui/pages/AnimeDetailPage.cpp
     src/core/LocalLibrary.cpp src/core/Models.cpp src/core/TitleParser.cpp src/core/Grouping.cpp src/core/Catalog.cpp
     src/net/HttpClient.cpp src/net/BangumiClient.cpp src/net/SearchAggregator.cpp src/net/Providers.cpp src/net/FeedParser.cpp
-    src/ui/Controls.cpp src/ui/Theme.cpp src/ui/Overlays.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp)
+    src/ui/Controls.cpp src/ui/Theme.cpp src/ui/Motion.cpp src/ui/Overlays.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp)
 target_include_directories(DetailLibrarySmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 target_link_libraries(DetailLibrarySmoke PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 qt_add_resources(DetailLibrarySmoke "detail_ui_icons" PREFIX "/" FILES ${UI_ICON_FILES})
@@ -180,7 +184,7 @@ if (MSVC)
     target_compile_options(DetailLibrarySmoke PRIVATE /utf-8)
 endif()
 add_executable(SettingsLimitsSmoke tests/settings_limits_smoke.cpp src/ui/pages/SettingsPage.cpp
-    src/ui/Controls.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp
+    src/ui/Controls.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Motion.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp
     src/net/HttpClient.cpp src/net/BangumiClient.cpp src/net/TorrentEngine.cpp src/net/ExternalDownloader.cpp src/net/DownloaderRpc.cpp
     src/core/LocalLibrary.cpp src/core/Grouping.cpp src/core/AppConfig.cpp src/core/EngineSettings.cpp src/core/Models.cpp src/core/TitleParser.cpp)
 target_include_directories(SettingsLimitsSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)

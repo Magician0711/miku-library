@@ -56,6 +56,7 @@ AppConfig AppConfig::load()
     }
     cfg.theme = root.value(QStringLiteral("theme")).toString(cfg.theme);
     cfg.appearance = root.value(QStringLiteral("appearance")).toString(cfg.appearance);
+    cfg.disclaimerAccepted = root.value(QStringLiteral("disclaimer_accepted")).toInt(cfg.disclaimerAccepted);
     cfg.language = root.value(QStringLiteral("language")).toString(cfg.language);
 
     cfg.downloader=DownloaderSettings::fromJson(root.value("downloader").toObject());
@@ -81,6 +82,7 @@ bool AppConfig::save() const
     root.insert("downloader",downloader.toJson());
     root.insert(QStringLiteral("theme"), theme);
     root.insert(QStringLiteral("appearance"), appearance);
+    root.insert(QStringLiteral("disclaimer_accepted"), disclaimerAccepted);
     root.insert(QStringLiteral("language"), language);
 
     QSaveFile file(configPath());

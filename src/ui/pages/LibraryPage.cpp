@@ -3,6 +3,7 @@
 #include "core/Database.h"
 #include "core/LocalLibrary.h"
 #include "ui/ImageLoader.h"
+#include "ui/Motion.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "net/BangumiClient.h"
@@ -43,13 +44,15 @@ LibraryPage::LibraryPage(Database *db, BangumiClient *bangumi, ImageLoader *imag
         button->setCheckable(true); button->setChecked(i==All); button->setCursor(Qt::PointingHandCursor);
         m_scope->addButton(button,i); scopeRow->addWidget(button);
     }
-    connect(m_scope,&QButtonGroup::idClicked,this,&LibraryPage::refresh);
+    new Motion::SlidingIndicator(scopeBar,m_scope->buttons(),Motion::SlidingIndicator::Look::Outlined,8);
+    connect(m_scope,&QButtonGroup::idClicked,this,[this]{Motion::crossfade(m_results);refresh();});
     header.actions->addWidget(scopeBar);
     layout->addWidget(header.widget);
 
     m_grid=new CardGrid(m_images); connect(m_grid,&CardGrid::cardClicked,this,&LibraryPage::animeSelected);
     m_empty=new EmptyState("library",QStringLiteral("收藏室，等你添上第一部"),QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"),this);
-    layout->addWidget(overlayStack(scrollArea(m_grid),m_empty,this),1);
+    m_results=overlayStack(scrollArea(m_grid),m_empty,this);
+    layout->addWidget(m_results,1);
 }
 
 void LibraryPage::showEvent(QShowEvent *event)

@@ -49,7 +49,6 @@ signals:
 Notifier *notifier();
 
 QFont uiFont(int pointSize = 10, QFont::Weight weight = QFont::Normal);
-QFont monoFont(int pointSize = 9);
 void applyTheme(QApplication *app, Mode mode = Mode::System);
 // Line icons painted on demand in the given palette role, so they follow theme changes.
 QIcon icon(const QString &name, Role role = &Palette::text2);

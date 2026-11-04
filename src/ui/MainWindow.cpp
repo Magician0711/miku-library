@@ -11,6 +11,9 @@
 #include "ui/Widgets.h"
 #include "ui/Controls.h"
 #include "ui/Overlays.h"
+#include "ui/Motion.h"
+#include "ui/UpdatePanel.h"
+#include "net/UpdateChecker.h"
 #include "ui/pages/AnimeDetailPage.h"
 #include "ui/pages/DownloadsPage.h"
 #include "ui/pages/HomePage.h"
@@ -85,7 +88,16 @@ MainWindow::MainWindow(Catalog *catalog, Database *db, AppConfig *config, HttpCl
         Ui::message(this,QStringLiteral("下载任务异常"),message,Ui::Notice::Warning);
     });
     QTimer::singleShot(0,this,[this]{m_animeDownloads->adoptCachedSubjects(m_db->cachedSubjects());});
-    setEngineStatus(m_engine->running() ? QStringLiteral("运行中") : QStringLiteral("未启动"));
+    updateStatus();
+    // Check followed release groups once per launch, after the first screen has settled.
+    QTimer::singleShot(10000,this,[this] {
+        m_updateChecker=new UpdateChecker(m_catalog,m_http,m_bangumi,m_localLibrary,this);
+        connect(m_updateChecker,&UpdateChecker::found,m_updatePanel,&UpdatePanel::addNotice);
+        connect(m_updateChecker,&UpdateChecker::finished,this,[](int checked,int withUpdates){
+            qInfo().noquote()<<QStringLiteral("update check: %1 anime checked, %2 with new episodes").arg(checked).arg(withUpdates);
+        });
+        m_updateChecker->start();
+    });
 }
 
 namespace {
@@ -144,27 +156,44 @@ void MainWindow::buildUi()
     badgeRow->addWidget(m_downloadBadge);
 
     rail->addSpacing(10);
-    auto *engineBox = new QFrame(nav); engineBox->setObjectName("EngineBadge");
+    // Download status card: which downloader new tasks go to and what it is doing
+    // right now. The card opens 下载任务; the ⇅ button switches downloader.
+    auto *engineBox = new QPushButton(nav); engineBox->setObjectName("EngineBadge");
+    engineBox->setCursor(Qt::PointingHandCursor); engineBox->setToolTip(QStringLiteral("查看下载任务"));
+    connect(engineBox,&QPushButton::clicked,this,[this]{selectPage(kDownloadsPage);});
     auto *engineRow = new QHBoxLayout(engineBox); engineRow->setContentsMargins(12,9,6,9); engineRow->setSpacing(10);
     m_engineDot = new StatusDot(m_engine->running() ? "ok" : "err",engineBox);
     engineRow->addWidget(m_engineDot);
-    auto *engineText=new QVBoxLayout; engineText->setSpacing(0);
-    engineText->addWidget(label(QStringLiteral("下载器"),"EngineCaption",false,engineBox));
+    auto *engineText=new QVBoxLayout; engineText->setSpacing(1);
     m_engineStatus=label(QString(),"EngineName",false,engineBox);
-    engineText->addWidget(m_engineStatus);
+    m_transferStatus=label(QString(),"EngineCaption",false,engineBox);
+    engineText->addWidget(m_engineStatus); engineText->addWidget(m_transferStatus);
     engineRow->addLayout(engineText,1);
+    for(auto *text:{m_engineStatus,m_transferStatus}) text->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_engineDot->setAttribute(Qt::WA_TransparentForMouseEvents);
     auto *switcher=new QToolButton(engineBox);switcher->setIcon(Theme::icon("selector"));switcher->setFixedSize(28,32);
     switcher->setObjectName("DownloaderSwitch");switcher->setAccessibleName(QStringLiteral("切换下载器"));switcher->setToolTip(QStringLiteral("切换下载器"));
     switcher->setCursor(Qt::PointingHandCursor);
     connect(switcher,&QToolButton::clicked,this,[this,switcher]{showDownloaderMenu(switcher);});engineRow->addWidget(switcher);
     rail->addWidget(engineBox);
     m_navButtons.first()->setChecked(true);
+    new Motion::SlidingIndicator(nav,{m_navButtons.cbegin(),m_navButtons.cend()},Motion::SlidingIndicator::Look::Plain,8);
     m_navButtons.first()->setFocus(Qt::OtherFocusReason);
     root->addWidget(nav);
 
     auto *canvas=new QFrame(body); canvas->setObjectName("Canvas");
     auto *canvasLayout=new QVBoxLayout(canvas); canvasLayout->setContentsMargins(1,1,0,0);
     m_stack=new QStackedWidget(canvas); canvasLayout->addWidget(m_stack);
+    // New episodes from followed groups surface here, bottom-right over any page.
+    m_updatePanel=new UpdatePanel(canvas);
+    connect(m_updatePanel,&UpdatePanel::downloadRequested,this,[this](const UpdateNotice &notice){
+        m_animeDownloads->downloadGroup(notice.target.subject,notice.candidates,{notice.target.after+1,0});
+    });
+    connect(m_updatePanel,&UpdatePanel::ignoreRequested,this,[this](const UpdateNotice &notice){
+        auto preference=m_localLibrary->preference(notice.target.subject.bangumiId);
+        for(const auto &episode:notice.episodes)preference.ignoredThrough=qMax(preference.ignoredThrough,int(episode.toDouble()));
+        m_localLibrary->setPreference(notice.target.subject.bangumiId,preference);
+    });
     root->addWidget(canvas,1);
     setCentralWidget(central);
 
@@ -208,9 +237,11 @@ void MainWindow::buildUi()
     addAction(searchShortcut);
 
     // Engine change notifications are frequent; the badge only needs a coarse refresh.
+    // Throttle, not debounce: frequent engine notifications must not keep
+    // postponing the refresh while transfers are running.
     m_badgeTimer=new QTimer(this); m_badgeTimer->setSingleShot(true); m_badgeTimer->setInterval(600);
-    connect(m_badgeTimer,&QTimer::timeout,this,&MainWindow::updateDownloadBadge);
-    connect(m_engine,&TorrentEngine::changed,m_badgeTimer,qOverload<>(&QTimer::start));
+    connect(m_badgeTimer,&QTimer::timeout,this,&MainWindow::updateStatus);
+    connect(m_engine,&TorrentEngine::changed,this,[this]{if(!m_badgeTimer->isActive())m_badgeTimer->start();});
     m_badgeTimer->start();
 }
 
@@ -232,15 +263,30 @@ void MainWindow::updateThemeButton()
     for(auto *action:m_themeButton->menu()->actions())action->setChecked(action->data().toInt()==int(mode));
 }
 
-void MainWindow::updateDownloadBadge()
+void MainWindow::updateStatus()
 {
-    int active=0;
-    for(const auto &task:m_engine->listTorrents())
+    const bool builtin=m_config->downloader.selected=="builtin";
+    const bool running=m_engine->running();
+    int active=0;qint64 down=0,up=0;
+    for(const auto &task:m_engine->listTorrents()) {
         if(task.status==DownloadStatus::Downloading||task.status==DownloadStatus::Pending)++active;
+        down+=task.dlSpeed;up+=task.upSpeed;
+    }
     m_downloadBadge->setText(QString::number(active));
     m_downloadBadge->setVisible(active>0);
     m_navButtons.at(kDownloadsPage)->setAccessibleName(active>0
         ? QStringLiteral("下载任务，%1 个进行中").arg(active) : QStringLiteral("下载任务"));
+
+    m_engineStatus->setText(builtin?QStringLiteral("内置下载器"):DownloaderSettings::name(m_config->downloader.selected));
+    m_engineDot->setState(builtin&&!running?"err":active>0?"busy":"ok");
+    QString transfer;
+    if(builtin&&!running) transfer=QStringLiteral("引擎未启动");
+    else if(down>0||up>0) transfer=QStringLiteral("↓ %1 · ↑ %2").arg(fmtSpeed(down),fmtSpeed(up));
+    else if(active>0) transfer=QStringLiteral("%1 个任务等待数据").arg(active);
+    else transfer=builtin?QStringLiteral("空闲"):QStringLiteral("新任务交给外部下载器");
+    m_transferStatus->setText(transfer);
+    // Keep the speeds current while anything is transferring.
+    if((active>0||down>0||up>0)&&!m_badgeTimer->isActive())m_badgeTimer->start(2000);
 }
 
 void MainWindow::selectPage(int index)
@@ -250,6 +296,7 @@ void MainWindow::selectPage(int index)
     m_currentNav = index;
     for (int i = 0; i < m_navButtons.size(); ++i)
         m_navButtons.at(i)->setChecked(i == index);
+    if (m_stack->currentIndex() != index) Motion::crossfade(m_stack);
     m_stack->setCurrentIndex(index);
     if (index == kSearchPage)
         m_search->focusInput();
@@ -301,6 +348,7 @@ void MainWindow::openAnime(const AnimeSubject &subject,bool localOnly)
         });
         m_stack->addWidget(m_detail);
     }
+    Motion::crossfade(m_stack);
     m_detail->showSubject(subject,localOnly);
     m_stack->setCurrentWidget(m_detail);
     if(!m_pendingInput.isEmpty()) {
@@ -364,16 +412,10 @@ void MainWindow::onDownloadRequested(const AnimeSubject &subject,const ResourceR
     m_animeDownloads->downloadOne(subject,result);
 }
 
-void MainWindow::setEngineStatus(const QString &text)
-{
-    const bool builtin=m_config->downloader.selected=="builtin";
-    m_engineStatus->setText(builtin?QStringLiteral("内置 · ")+text:DownloaderSettings::name(m_config->downloader.selected));
-    m_engineDot->setState(!builtin||m_engine->running()?"ok":"err");
-}
 
 void MainWindow::updateDownloader()
 {
-    setEngineStatus(m_engine->running()?QStringLiteral("运行中"):QStringLiteral("未启动"));
+    updateStatus();
     m_downloads->updateDownloader();
 }
 void MainWindow::showDownloaderMenu(QWidget *anchor)

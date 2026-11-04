@@ -181,22 +181,32 @@ void BangumiClient::search(const QString &term, int limit,
 
 void BangumiClient::getSubject(int id, std::function<void(AnimeSubject, QString)> callback)
 {
+    if (const auto cached = m_subjects.constFind(id); cached != m_subjects.cend()) {
+        callback(cached.value(), {});
+        return;
+    }
+    auto &waiters = m_subjectWaiters[id];
+    waiters.push_back(std::move(callback));
+    if (waiters.size() > 1)
+        return;
     auto *reply = m_http->get(endpoint(QStringLiteral("/v0/subjects/%1").arg(id)), 15000);
-    connect(reply, &QNetworkReply::finished, this, [reply, callback = std::move(callback)]() mutable {
-        const QString error = HttpClient::replyError(reply);
-        if (!error.isEmpty()) {
-            reply->deleteLater();
-            callback({}, error);
-            return;
-        }
-        bool ok = false;
-        const auto doc = HttpClient::json(reply, &ok);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, id] {
         reply->deleteLater();
-        if (!ok || !doc.isObject()) {
-            callback({}, QStringLiteral("Bangumi 返回了无效 JSON"));
-            return;
+        AnimeSubject subject;
+        QString error = HttpClient::replyError(reply);
+        if (error.isEmpty()) {
+            bool ok = false;
+            const auto doc = HttpClient::json(reply, &ok);
+            if (ok && doc.isObject()) {
+                subject = parseSubjectV0(doc.object());
+                m_subjects.insert(id, subject);
+            } else {
+                error = QStringLiteral("Bangumi 返回了无效 JSON");
+            }
         }
-        callback(parseSubjectV0(doc.object()), {});
+        // Errors are not cached, so a later attempt can still succeed.
+        for (const auto &waiter : m_subjectWaiters.take(id))
+            waiter(subject, error);
     });
 }
 

@@ -6,7 +6,9 @@
 #include <QHash>
 #include <QWidget>
 
+#include <array>
 #include <functional>
+#include <optional>
 
 class LocalLibrary;
 class SearchAggregator;
@@ -39,7 +41,7 @@ public:
 signals:
     void backRequested();
     void downloadRequested(AnimeSubject subject,ResourceResult result);
-    void groupDownloadRequested(AnimeSubject subject,QVector<ResourceResult> resources);
+    void groupDownloadRequested(AnimeSubject subject,QVector<ResourceResult> resources,EpisodeRange range);
     void resourcesDiscovered(AnimeSubject subject,QVector<ResourceResult> resources);
     void playRequested(AnimeSubject subject,ResourceResult result);
     void followChanged(AnimeSubject subject, bool following);
@@ -64,6 +66,10 @@ private:
     void scheduleRender();
     void render();
     void clearGroups();
+    void showGroupOptions(QWidget *anchor, const QString &group, const QVector<ResourceResult> &candidates);
+    // Saves the group (and, when given, language / subtitle type / resolution)
+    // as this anime's download preference for later one-click and update checks.
+    void rememberChoice(const QString &group, std::optional<std::array<QString, 3>> kind);
     void resetFilters();
     void updateHero();
     void setSeasons(const QVector<int> &seasons);
@@ -73,6 +79,7 @@ private:
     LocalLibrary *m_library;
     bool m_localOnly=false;
     bool m_searching=false;
+    bool m_fadeNextRender=false;
     QWidget *m_sourcePanel=nullptr;
     QLabel *m_sectionTitle=nullptr;
     QComboBox *m_downloadStatus=nullptr;

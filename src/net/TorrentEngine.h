@@ -88,6 +88,8 @@ private:
     QTimer *m_alertTimer = nullptr;
     QString m_stateDir;
     QVector<Entry> m_entries;
+    // File list of one torrent; stopped marks a task the engine paused on completion.
+    QVector<DownloadFile> filesOf(const lt::torrent_handle &handle, const QString &savePath, bool stopped) const;
     QSet<QString> m_metadataPending;
     QHash<QString,Entry> m_readds;
     QHash<QString, QString> m_saveErrors;

@@ -16,7 +16,7 @@ class AnimeDownloads : public QObject {
 public:
     AnimeDownloads(TorrentEngine *engine,LocalLibrary *library,AppConfig *config,QObject *parent=nullptr);
     void downloadOne(const AnimeSubject &subject,const ResourceResult &resource);
-    void downloadGroup(const AnimeSubject &subject,const QVector<ResourceResult> &resources);
+    void downloadGroup(const AnimeSubject &subject,const QVector<ResourceResult> &resources,const EpisodeRange &range={});
     void adoptExisting(const AnimeSubject &subject,const QVector<ResourceResult> &resources);
     void synchronize();
     void adoptCachedSubjects(const QVector<AnimeSubject> &subjects);

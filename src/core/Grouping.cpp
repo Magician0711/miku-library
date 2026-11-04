@@ -91,6 +91,13 @@ bool isRelevant(const QString &title, const QStringList &keys)
     return false;
 }
 
+bool EpisodeRange::contains(const QString &episode) const
+{
+    bool ok = false;
+    const double value = episode.toDouble(&ok);
+    return ok && (first <= 0 || value >= first) && (last <= 0 || value <= last);
+}
+
 double Release::sortEpisode() const
 {
     if (episode.isEmpty())
@@ -203,11 +210,21 @@ bool passes(const Release &release, const Filters &filters)
     return true;
 }
 
-QVector<ReleaseGroup> groupReleases(const QVector<Release> &releases, const QString &sortKey)
+QVector<ReleaseGroup> groupReleases(const QVector<Release> &releases, const QString &sortKey, const QStringList &subjectKeys)
 {
+    // A leading bracket that only repeats the title ("[海贼王][1089]") is not a
+    // release group; showing it as one would split unattributed releases apart.
+    auto unattributed = [&subjectKeys](const QString &group) {
+        if (group.isEmpty() || group == kUnknownGroup) return true;
+        const QString key = releaseGroupKey(group);
+        for (const auto &subject : subjectKeys)
+            if (!key.isEmpty() && (key == subject || (subject.size() >= 3 && key.contains(subject))))
+                return true;
+        return false;
+    };
     QHash<QString, ReleaseGroup> buckets;
     for (const auto &release : releases) {
-        const QString name = release.result.releaseGroup.isEmpty() ? kUnknownGroup : release.result.releaseGroup;
+        const QString name = unattributed(release.result.releaseGroup) ? kUnknownGroup : release.result.releaseGroup;
         const QString key = releaseGroupKey(name).isEmpty() ? name : releaseGroupKey(name);
         auto &group = buckets[key];
         if (group.name.isEmpty())
@@ -233,7 +250,26 @@ QVector<ReleaseGroup> groupReleases(const QVector<Release> &releases, const QStr
     auto latestKey = [](const ReleaseGroup &group) {
         return safeTime(group.latest()).toSecsSinceEpoch();
     };
-    if (sortKey == QStringLiteral("seeders")) {
+    if (sortKey == QStringLiteral("popular")) {
+        // Each group's share of the best seeder total and of the largest
+        // resource count, so popular groups and complete archives both rise.
+        int maxSeeders = 0;
+        qsizetype maxCount = 1;
+        for (const auto &group : groups) {
+            if (group.name == kUnknownGroup) continue;
+            maxSeeders = qMax(maxSeeders, group.totalSeeders());
+            maxCount = qMax(maxCount, group.releases.size());
+        }
+        auto score = [&](const ReleaseGroup &group) {
+            const double seeders = maxSeeders > 0 ? double(group.totalSeeders()) / maxSeeders : 0.0;
+            return seeders + double(group.releases.size()) / double(maxCount);
+        };
+        std::sort(groups.begin(), groups.end(), [&](const ReleaseGroup &a, const ReleaseGroup &b) {
+            const double sa = score(a), sb = score(b);
+            if (!qFuzzyCompare(1.0 + sa, 1.0 + sb)) return sa > sb;
+            return latestKey(a) > latestKey(b);
+        });
+    } else if (sortKey == QStringLiteral("seeders")) {
         std::sort(groups.begin(), groups.end(), [](const ReleaseGroup &a, const ReleaseGroup &b) {
             return a.totalSeeders() > b.totalSeeders();
         });

@@ -1,10 +1,12 @@
 #include "ui/Overlays.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
+#include "ui/ImageLoader.h"
 
 #include <QApplication>
 #include <QDialog>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEnterEvent>
 #include <QFile>
 #include <QFileDialog>
@@ -130,6 +132,18 @@ int main(int argc,char **argv)
         QTimer::singleShot(0,&window,[&]{if(auto *d=qobject_cast<QDialog *>(app.activeModalWidget()))d->reject();});
         check(Ui::replaceDownloadDirectory(&window,"missing",QStringLiteral("目录已不存在。")).isEmpty(),
             "closing missing-directory prompt does not silently choose a path");
+        {
+            const QString covers=sandbox.filePath("covers");QDir().mkpath(covers);
+            QFile stale(covers+"/old.img");stale.open(QIODevice::WriteOnly);stale.write("x");stale.close();
+            auto *loader=new ImageLoader(covers);bool called=false,empty=false;
+            loader->request(QStringLiteral("http://example.com/a.jpg"),[&](QImage image){called=true;empty=image.isNull();});
+            QElapsedTimer clock;clock.start();
+            while((!called||QFile::exists(covers+"/old.img"))&&clock.elapsed()<3000)QCoreApplication::processEvents(QEventLoop::AllEvents,20);
+            check(called&&empty,"cover loader answers non-https urls with an empty image");
+            check(!QFile::exists(covers+"/old.img")&&QDir(covers+"/400x600").exists(),"cover loader removes legacy cache files and keeps sized folder");
+            loader->request(QStringLiteral("http://example.com/b.jpg"),[](QImage){});delete loader;
+            check(true,"cover loader destructor waits for pending workers");
+        }
         app.exit(failures?1:0);
     });
     return app.exec();

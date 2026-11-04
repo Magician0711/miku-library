@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include "core/DownloaderSettings.h"
+#include "core/EngineSettings.h"
 #include "ui/Theme.h"
 
 class TorrentEngine;
@@ -30,9 +31,19 @@ protected:
 private:
     void load();
     void apply();
+    // What the form would save; shared by apply() and change detection.
+    EngineSettings engineFromForm() const;
+    DownloaderSettings downloaderFromForm() const;
+    // Shows the apply bar only while the form differs from the saved settings.
+    void updateDirty();
+    void updateCacheSize();
     void updateDownloaderFields();
     void saveDownloaderDraft();
     QTabWidget *m_tabs;
+    QWidget *m_saveBar = nullptr;
+    QLabel *m_cacheSize = nullptr;
+    bool m_dirty = false;
+    bool m_loading = false;   // form is being refilled from the saved settings
     QButtonGroup *m_appearance;
     QWidget *m_downloaderTab;
     QComboBox *m_downloaderType;

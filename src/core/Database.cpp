@@ -163,14 +163,10 @@ bool Database::upsertSubject(const AnimeSubject &subject)
     return query.exec();
 }
 
-std::optional<AnimeSubject> Database::getSubject(int bangumiId) const
+namespace {
+// Reads the current row of a "SELECT * FROM anime_subjects" query.
+AnimeSubject subjectFromRow(const QSqlQuery &query)
 {
-    QSqlQuery query(m_db);
-    query.prepare(QStringLiteral("SELECT * FROM anime_subjects WHERE bangumi_id=?"));
-    query.addBindValue(bangumiId);
-    if (!query.exec() || !query.next())
-        return std::nullopt;
-
     const auto record = query.record();
     auto text = [&](const QString &name) {
         const int idx = record.indexOf(name);
@@ -201,6 +197,17 @@ std::optional<AnimeSubject> Database::getSubject(int bangumiId) const
     subject.airWeekday = number(QStringLiteral("air_weekday"));
     subject.studio = text(QStringLiteral("studio"));
     return subject;
+}
+} // namespace
+
+std::optional<AnimeSubject> Database::getSubject(int bangumiId) const
+{
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral("SELECT * FROM anime_subjects WHERE bangumi_id=?"));
+    query.addBindValue(bangumiId);
+    if (!query.exec() || !query.next())
+        return std::nullopt;
+    return subjectFromRow(query);
 }
 
 bool Database::follow(int bangumiId)
@@ -242,7 +249,7 @@ bool Database::isFollowing(int bangumiId) const
 QVector<AnimeSubject> Database::cachedSubjects() const
 {
     QVector<AnimeSubject> out;QSqlQuery query(m_db);
-    if(query.exec(QStringLiteral("SELECT bangumi_id FROM anime_subjects")))
-        while(query.next())if(auto subject=getSubject(query.value(0).toInt()))out.append(*subject);
+    if(query.exec(QStringLiteral("SELECT * FROM anime_subjects")))
+        while(query.next())out.append(subjectFromRow(query));
     return out;
 }

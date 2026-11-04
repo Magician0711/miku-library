@@ -38,9 +38,21 @@ int main(int argc,char **argv) {
         {"[Fansub] Test [720] [05]","05"},
         {"[Fansub] Test [1080p] [HEVC 10bit] [AAC 2.0]",""},
         {"[Fansub] Test [01-12] [E528]","01-12"},
-        {QStringLiteral("[组] 测试 Ｓ０１Ｅ０３"),"03"}
+        {QStringLiteral("[组] 测试 Ｓ０１Ｅ０３"),"03"},
+        // long-running series
+        {"[Erai-raws] One Piece - 1089 [1080p][Multiple Subtitle]","1089"},
+        {"[Lilith-Raws] ONE PIECE [1089][Baha][WEB-DL][1080p]","1089"},
+        {QStringLiteral("【喵萌奶茶屋】海贼王 第1089话 [1080p]"),"1089"},
+        {"[GM-Team][One Piece][1001-1050][GB][1080p]","1001-1050"},
+        {"[Group] Detective Conan [0995-1005] [1080p]","0995-1005"},
+        {"[Group] One Piece EP1001-EP1010 [1080p]","1001-1010"},
+        {"[Group] One Piece S01E1100 [1080p]","1100"},
+        {"[Group] Test [2019-2020] [07] [1080p]","07"},
+        {"[Group] Test [1080] [1089]","1089"},
+        {"[Group] Test [2024] [1080p]",""}
     };
     for(const auto &[title,label]:episodeCases)check(parseEpisode(title).label==label,qPrintable("episode recognition: "+title));
+    check(episodeNumbers("1001-1050").size()==50&&episodeNumbers("0995-1005").value(0)=="995"&&fileEpisodeNumbers("One Piece - 1089.mkv")==QStringList{"1089"},"four-digit episodes and long collections expand to individual episodes");
     check(fileEpisodeNumbers("Test E528.mkv").isEmpty()&&fileEpisodeNumbers("Test [E528] - 07.mkv")==QStringList{"7"},"media identifiers do not become downloaded episode claims");
     {
         LocalLibrary legacy(dir.filePath("legacy.json"));legacy.load();
@@ -65,6 +77,11 @@ int main(int argc,char **argv) {
     check(plans.size()==2&&plans[0].resource.tags.resolution=="1080p","one quality per episode, episode order");
     auto freshBatch=first;freshBatch.title="[Group A] Test [01-02] Complete";
     check(library.plan(subject,{freshBatch}).value(0).onlyEpisodes==QStringList({"1","2"}),"fresh collection also selects one video per episode");
+    check(library.plan(subject,{freshBatch},nullptr,false,{2,2}).value(0).onlyEpisodes==QStringList({"2"}),"episode window limits a collection to files inside it");
+    {
+        const auto windowed=library.plan(subject,{resource(1),resource(2)},nullptr,false,{2,0});
+        check(windowed.size()==1&&windowed.value(0).episodes==QStringList({"2"}),"episode window skips single episodes outside it");
+    }
     {
         LocalLibrary selected(dir.filePath("selected.json"));selected.load();LibraryItem pending;
         pending.subject=subject;pending.resource=freshBatch;pending.groupKey=releaseGroupKey(freshBatch.releaseGroup);
@@ -105,6 +122,38 @@ int main(int argc,char **argv) {
     check(!library.downloaded(123,first)&&library.plan(subject,{first}).size()==1,"deleted file can be downloaded again");
     i.phase="downloading";i.episodes.clear();i.resource.title="[Group A] Test Complete Batch";i.key=library.itemKey(123,i.resource);i.files.clear();library.put(i);
     check(library.plan(subject,{second}).isEmpty(),"unknown active batch blocks overlapping singles");
+    {
+        // Download preferences and the startup update check.
+        const QString followPath=dir.filePath("follow.json");
+        LocalLibrary follow(followPath);follow.load();
+        AnimeSubject show;show.bangumiId=500;show.nameCn=QStringLiteral("追番测试");show.nameEn="Test";show.episodeCount=24;
+        AnimeSubject done=show;done.bangumiId=501;done.episodeCount=2;
+        auto hold=[&](const AnimeSubject &s,int ep){
+            LibraryItem item;item.subject=s;item.resource=resource(ep);item.resource.magnetUri+=QString::number(s.bangumiId);
+            item.groupKey=releaseGroupKey("Group A");item.season=1;item.key=follow.itemKey(s.bangumiId,item.resource);
+            item.episodes={QString::number(ep)};item.phase="downloading";follow.put(item);
+        };
+        hold(done,1);hold(done,2);hold(show,1);hold(show,2);
+        auto pref=follow.preference(500);
+        check(pref.group=="Group A"&&pref.resolution=="1080p","preference is derived from the latest download");
+        const auto targets=follow.updateTargets();
+        check(targets.size()==1&&targets[0].subject.bangumiId==500&&targets[0].after==2&&targets[0].season==1,
+              "update check follows the newest claimed episode and skips completed anime");
+        const auto found=follow.newEpisodes(targets.value(0),{resource(1),resource(3),resource(4),resource(3,"Group B"),resource(4,"Group A",1,720)});
+        QStringList episodes;for(const auto &plan:found)episodes+=plan.episodes;
+        check(episodes==QStringList({"3","4"}),"new episodes come only from the followed group and quality");
+        pref.ignoredThrough=3;check(follow.setPreference(500,pref),"preference is saved");
+        LocalLibrary reopened(followPath);reopened.load();
+        check(reopened.preference(500).ignoredThrough==3&&reopened.updateTargets().value(0).after==3,
+              "dismissed episodes persist and move the update window");
+        check(reopened.item(reopened.itemKey(500,resource(2)))&&!reopened.item("missing"),"indexed lookups survive reload");
+        // Watched and deleted: a finished task without files is still followed.
+        auto watched=*reopened.item(reopened.itemKey(500,resource(2)));watched.phase="complete";watched.complete=true;watched.files.clear();
+        reopened.put(watched);auto reset=reopened.preference(500);reset.ignoredThrough=0;reopened.setPreference(500,reset);
+        check(reopened.updateTargets().value(0).after==2,"deleted episodes still mark how far the user has followed");
+        hold(show,5);auto cancelled=*follow.item(follow.itemKey(500,resource(5)));cancelled.phase="cancelled";follow.put(cancelled);
+        check(follow.updateTargets().value(0).after==3,"cancelled downloads do not advance the update window");
+    }
     check(LocalLibrary::safeFolderName("CON")=="_CON"&&LocalLibrary::safeFolderName("../A:B?*").contains("_")
         &&!LocalLibrary::safeFolderName("../A:B?*").contains('/'),"Windows folder names are safe");
     QFile corrupt(dir.filePath("broken.json"));corrupt.open(QIODevice::WriteOnly);corrupt.write("broken");corrupt.close();

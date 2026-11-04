@@ -4,6 +4,7 @@
 #include "ImageLoader.h"
 #include "Theme.h"
 #include "Controls.h"
+#include "Motion.h"
 #include "net/BangumiClient.h"
 
 #include <QDateTime>
@@ -25,6 +26,7 @@
 #include <QSizePolicy>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 
 namespace {
 
@@ -305,8 +307,23 @@ void AnimeCard::keyPressEvent(QKeyEvent *event)
     QWidget::keyPressEvent(event);
 }
 
-void AnimeCard::enterEvent(QEnterEvent *event) { m_hover=true; update(); QWidget::enterEvent(event); }
-void AnimeCard::leaveEvent(QEvent *event) { m_hover=false; update(); QWidget::leaveEvent(event); }
+void AnimeCard::enterEvent(QEnterEvent *event) { animateHover(true); QWidget::enterEvent(event); }
+void AnimeCard::leaveEvent(QEvent *event) { animateHover(false); QWidget::leaveEvent(event); }
+
+void AnimeCard::animateHover(bool hover)
+{
+    if(!m_hoverAnimation) {
+        m_hoverAnimation=new QVariantAnimation(this);
+        m_hoverAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        connect(m_hoverAnimation,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_hoverLevel=value.toReal();update();});
+    }
+    m_hoverAnimation->stop();
+    m_hoverAnimation->setDuration(Motion::duration(Motion::Fast));
+    m_hoverAnimation->setStartValue(m_hoverLevel);
+    m_hoverAnimation->setEndValue(hover?1.0:0.0);
+    if(m_hoverAnimation->duration()<=0){m_hoverLevel=hover?1:0;update();return;}
+    m_hoverAnimation->start();
+}
 
 void AnimeCard::focusInEvent(QFocusEvent *event)
 {
@@ -324,11 +341,13 @@ void AnimeCard::paintEvent(QPaintEvent *event)
 {
     QWidget::paintEvent(event);
     const bool focusRing=m_keyboardFocus && hasFocus();
-    if(!focusRing && !m_hover)return;
+    if(!focusRing && m_hoverLevel<=0.01)return;
     // The ring hugs the poster so the card itself never gains an outer frame.
     QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);
     painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(QColor(focusRing ? Theme::c().accentText : Theme::c().accent),2));
+    QColor ring=focusRing ? Theme::c().accentText : Theme::c().accent;
+    if(!focusRing) ring.setAlphaF(m_hoverLevel);
+    painter.setPen(QPen(ring,2));
     painter.drawRoundedRect(QRectF(m_poster->geometry()).adjusted(-2,-2,2,2),12,12);
 }
 

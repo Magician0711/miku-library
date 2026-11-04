@@ -7,9 +7,14 @@
 #include "ui/Widgets.h"
 #include "ui/Controls.h"
 #include "ui/Overlays.h"
+#include "ui/Motion.h"
 
 #include <QAbstractSocket>
 #include <QButtonGroup>
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QCoreApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -83,6 +88,8 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
 
     m_tabs=new QTabWidget(this);
     m_tabs->tabBar()->setDrawBase(false);
+    // tabBarClicked fires before the page changes, which is when the snapshot is needed.
+    connect(m_tabs->tabBar(),&QTabBar::tabBarClicked,this,[this](int index){if(index!=m_tabs->currentIndex())Motion::crossfade(m_tabs,Motion::Fast);});
     auto addSection=[&](const QString &name,const QString &description) {
         auto *body=new QWidget; body->setObjectName("ScrollBody"); body->setMaximumWidth(kColumnWidth);
         auto *col=new QVBoxLayout(body); col->setContentsMargins(0,4,10,12); col->setSpacing(14);
@@ -103,6 +110,7 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
         button->setObjectName("SegmentButton"); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor);
         m_appearance->addButton(button,int(mode)); modeRow->addWidget(button);
     }
+    new Motion::SlidingIndicator(modeBar,m_appearance->buttons(),Motion::SlidingIndicator::Look::Outlined,8);
     connect(m_appearance,&QButtonGroup::idClicked,this,[this](int id){emit appearanceRequested(Theme::Mode(id));});
     auto syncAppearance=[this]{if(auto *button=m_appearance->button(int(Theme::mode())))button->setChecked(true);};
     connect(Theme::notifier(),&Theme::Notifier::changed,this,syncAppearance);
@@ -169,6 +177,17 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     });
     pathLayout->addWidget(m_savePath,1); pathLayout->addWidget(browse);
     addSetting(storage,QStringLiteral("默认下载目录"),QStringLiteral("只影响之后新建的任务。"),pathRow,true);
+    // Cover cache: show its size and allow clearing it; covers download again on demand.
+    auto *cacheRow=new QWidget;auto *cacheLayout=new QHBoxLayout(cacheRow);cacheLayout->setContentsMargins(0,0,0,0);cacheLayout->setSpacing(8);
+    m_cacheSize=label(QString(),"SettingHint",false,cacheRow);cacheLayout->addWidget(m_cacheSize,1,Qt::AlignRight|Qt::AlignVCenter);
+    auto *clearCache=new QPushButton(QStringLiteral("清理"),cacheRow);clearCache->setObjectName("ClearCoverCache");clearCache->setIcon(Theme::icon("trash"));
+    cacheLayout->addWidget(clearCache);
+    connect(clearCache,&QPushButton::clicked,this,[this]{
+        QDirIterator it(QDir(AppConfig::dataDir()).filePath(QStringLiteral("covers")),{QStringLiteral("*.img")},QDir::Files,QDirIterator::Subdirectories);
+        while(it.hasNext())QFile::remove(it.next());
+        updateCacheSize();
+    });
+    addSetting(storage,QStringLiteral("海报缓存"),QStringLiteral("清理后，海报会在下次显示时重新下载。"),cacheRow,true);
     col->addStretch(1);
 
     // Network
@@ -234,11 +253,32 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     addSetting(queue,QStringLiteral("活动任务上限"),QString(),m_activeLimit);
     col->addStretch(1);
 
+    // About: version and the usage declaration accepted on first launch.
+    col=addSection(QStringLiteral("关于"),QStringLiteral("Anime Nexus 是番剧资源检索与下载管理工具。"));
+    auto *about=settingsCard(col,QStringLiteral("Anime Nexus ")+QCoreApplication::applicationVersion());
+    about->layout()->addWidget(label(QStringLiteral("聚合多个公开资源站的检索结果，按字幕组整理番剧资源，管理下载并播放本地视频。第三方组件的许可文本位于程序目录的 licenses 文件夹。"),"SettingHint",true,about));
+    for(const auto &[title,text]:{std::pair{QStringLiteral("免费开源"),Ui::freeSoftwareNote()},std::pair{QStringLiteral("关于播放"),Ui::playerNote()}}) {
+        about->layout()->addWidget(divider(about));
+        about->layout()->addWidget(label(title,"SettingTitle",false,about));
+        auto *note=label(text,"SettingHint",true,about);note->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        about->layout()->addWidget(note);
+    }
+    auto *terms=settingsCard(col,QStringLiteral("使用声明"));
+    const auto items=Ui::disclaimerItems();
+    for(int i=0;i<items.size();++i) {
+        auto *item=label(QStringLiteral("%1. %2").arg(i+1).arg(items.at(i)),i==1?"SettingTitle":"SettingHint",true,terms);
+        item->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        terms->layout()->addWidget(item);
+    }
+    col->addStretch(1);
+    const int aboutTab=m_tabs->count()-1;
+
     root->addWidget(m_tabs,1);
 
     auto *saveBar=new QFrame(this); saveBar->setObjectName("SaveBar"); saveBar->setMaximumWidth(kColumnWidth-10);
+    m_saveBar=saveBar;
     auto *actions=new QHBoxLayout(saveBar); actions->setContentsMargins(16,10,10,10); actions->setSpacing(8);
-    actions->addWidget(label(QStringLiteral("修改在点击「应用设置」后生效"),"Faint",true,saveBar),1);
+    actions->addWidget(label(QStringLiteral("设置已修改，点击「应用设置」后生效"),"Faint",true,saveBar),1);
     auto *reload=new QPushButton(QStringLiteral("放弃更改"),saveBar);
     connect(reload,&QPushButton::clicked,this,&SettingsPage::load);
     actions->addWidget(reload);
@@ -248,9 +288,13 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     actions->addWidget(applyButton);
     root->addWidget(saveBar);
     // Appearance applies instantly, so the apply bar would only mislead there.
-    const int appearanceTab=0;
-    connect(m_tabs,&QTabWidget::currentChanged,saveBar,[saveBar](int index){saveBar->setVisible(index!=appearanceTab);});
-    saveBar->setVisible(m_tabs->currentIndex()!=appearanceTab);
+    Q_UNUSED(aboutTab)
+    // Every input feeds the change check; the bar stays hidden until something differs.
+    saveBar->hide();
+    for(auto *edit:findChildren<QLineEdit *>())connect(edit,&QLineEdit::textChanged,this,&SettingsPage::updateDirty);
+    for(auto *box:findChildren<QComboBox *>())connect(box,qOverload<int>(&QComboBox::currentIndexChanged),this,&SettingsPage::updateDirty);
+    for(auto *spin:findChildren<QSpinBox *>())connect(spin,qOverload<int>(&QSpinBox::valueChanged),this,&SettingsPage::updateDirty);
+    for(auto *check:findChildren<QCheckBox *>())connect(check,&QCheckBox::toggled,this,&SettingsPage::updateDirty);
 
     load();
 }
@@ -259,10 +303,20 @@ void SettingsPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     load();
+    updateCacheSize();
+}
+
+void SettingsPage::updateCacheSize()
+{
+    qint64 bytes=0;int count=0;
+    QDirIterator it(QDir(AppConfig::dataDir()).filePath(QStringLiteral("covers")),{QStringLiteral("*.img")},QDir::Files,QDirIterator::Subdirectories);
+    while(it.hasNext()){it.next();bytes+=it.fileInfo().size();++count;}
+    m_cacheSize->setText(count?QStringLiteral("%1 张 · %2").arg(count).arg(fmtSize(bytes)):QStringLiteral("空"));
 }
 
 void SettingsPage::load()
 {
+    m_loading=true;
     m_downloaderDraft=m_config->downloader;m_editType.clear();
     {QSignalBlocker block(m_downloaderType);m_downloaderType->setCurrentIndex(qMax(0,m_downloaderType->findData(m_downloaderDraft.selected)));}
     updateDownloaderFields();
@@ -293,13 +347,12 @@ void SettingsPage::load()
     m_status->setText(m_engine->running()
                           ? QStringLiteral("内置引擎运行中 · %1").arg(m_engine->version())
                           : QStringLiteral("内置引擎未启动"));
+    m_loading=false;
+    updateDirty();
 }
 
-void SettingsPage::apply()
+EngineSettings SettingsPage::engineFromForm() const
 {
-    saveDownloaderDraft();m_downloaderDraft.selected=m_downloaderType->currentData().toString();
-    QString error;
-    if(!ExternalDownloader::validate(m_downloaderDraft,&error)){Ui::message(this,QStringLiteral("下载器配置未完成"),error,Ui::Notice::Warning);return;}
     EngineSettings settings = m_config->engine;
     settings.savePath = m_savePath->text().trimmed();
     settings.bindAddress = m_interface->currentData().toString();
@@ -319,6 +372,51 @@ void SettingsPage::apply()
     settings.activeDownloads = m_activeDownloads->value();
     settings.activeSeeds = m_activeSeeds->value();
     settings.activeLimit = m_activeLimit->value();
+    return settings;
+}
+
+DownloaderSettings SettingsPage::downloaderFromForm() const
+{
+    // The draft holds other types' edits; overlay the type currently on screen.
+    DownloaderSettings settings=m_downloaderDraft;
+    if(DownloaderSettings::supportsRpc(m_editType))settings.rpc[m_editType]={m_rpcEnabled->isChecked(),m_rpcUrl->text().trimmed(),m_rpcUser->text(),m_rpcPassword->text()};
+    if(!m_editType.isEmpty()&&m_editType!="builtin")settings.programs[m_editType]=m_downloaderPath->text().trimmed();
+    if(m_editType=="custom")settings.customArguments=m_customArguments->text();
+    settings.selected=m_downloaderType->currentData().toString();
+    return settings;
+}
+
+namespace {
+// Compare what each setting resolves to, so merely looking at another
+// downloader type (which leaves empty drafts and default URLs) is no change.
+bool sameDownloader(const DownloaderSettings &a,const DownloaderSettings &b)
+{
+    if(a.selected!=b.selected||a.customArguments!=b.customArguments)return false;
+    for(const auto &type:DownloaderSettings::types()) {
+        if(a.programs.value(type)!=b.programs.value(type))return false;
+        if(!DownloaderSettings::supportsRpc(type))continue;
+        const auto x=a.rpcProfile(type),y=b.rpcProfile(type);
+        if(x.enabled!=y.enabled||x.url!=y.url||x.username!=y.username||x.password!=y.password)return false;
+    }
+    return true;
+}
+}
+
+void SettingsPage::updateDirty()
+{
+    if(!m_saveBar||m_loading)return;
+    const bool dirty=engineFromForm().toJson()!=m_config->engine.toJson()||!sameDownloader(downloaderFromForm(),m_config->downloader);
+    if(dirty==m_dirty)return;
+    m_dirty=dirty;
+    Motion::setExpanded(m_saveBar,dirty);
+}
+
+void SettingsPage::apply()
+{
+    m_downloaderDraft=downloaderFromForm();
+    QString error;
+    if(!ExternalDownloader::validate(m_downloaderDraft,&error)){Ui::message(this,QStringLiteral("下载器配置未完成"),error,Ui::Notice::Warning);return;}
+    const EngineSettings settings=engineFromForm();
 
     const AppConfig before=*m_config;
     m_config->engine=settings;m_config->paths.downloadDir=settings.savePath;m_config->downloader=m_downloaderDraft;
@@ -326,13 +424,14 @@ void SettingsPage::apply()
     emit downloaderChanged();
     m_engine->applySettings(settings);
     m_status->setText(QStringLiteral("已应用 · %1").arg(m_engine->version()));
+    updateDirty();
 }
 
 void SettingsPage::saveDownloaderDraft()
 {
-    if(DownloaderSettings::supportsRpc(m_editType))m_downloaderDraft.rpc[m_editType]={m_rpcEnabled->isChecked(),m_rpcUrl->text().trimmed(),m_rpcUser->text(),m_rpcPassword->text()};
-    if(!m_editType.isEmpty()&&m_editType!="builtin")m_downloaderDraft.programs[m_editType]=m_downloaderPath->text().trimmed();
-    if(m_editType=="custom")m_downloaderDraft.customArguments=m_customArguments->text();
+    const QString selected=m_downloaderDraft.selected;
+    m_downloaderDraft=downloaderFromForm();
+    m_downloaderDraft.selected=selected;
 }
 
 void SettingsPage::updateDownloaderFields()

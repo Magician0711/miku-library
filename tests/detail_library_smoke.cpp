@@ -106,6 +106,27 @@ int main(int argc,char **argv) {
     bool moreAgain=false;for(auto *b:page.findChildren<QPushButton*>())if(b->isVisibleTo(&page)&&b->text().startsWith(QStringLiteral("显示更多发布组")))moreAgain=true;
     check(!moreAgain,"no repeated more-groups action is needed");
     {
+        // Ranking: the larger group leads; title-only "groups" and unattributed
+        // releases are merged into one folded bucket at the bottom.
+        page.showSubject(subject);
+        QVector<ResourceResult> ranked;
+        for(int n=21;n<=24;++n)ranked.append(resource(n,"Big Group"));
+        ranked.append(resource(25,"Small Group"));
+        auto pseudo=resource(26,"Test Anime");ranked.append(pseudo);
+        auto bare=resource(27,"Nobody");bare.title="Test Anime S01E27 [1080p]";bare.releaseGroup.clear();bare.tags=parseTitle(bare.title);ranked.append(bare);
+        aggregator.batchReady(ranked);aggregator.finished();pump();
+        QStringList headers;QPushButton *last=nullptr;
+        for(auto *b:page.findChildren<QPushButton*>("GroupHeader"))if(b->isVisibleTo(&page)){headers.append(b->text());last=b;}
+        check(headers.size()==3&&headers.first().startsWith("Big Group")&&headers.last().startsWith(QStringLiteral("未归档资源")),"popular groups first, unattributed releases merged last");
+        check(last&&!last->isChecked(),"unattributed bucket starts folded");
+        bool bulkOnUnknown=false;
+        if(last)for(auto *b:last->parentWidget()->findChildren<QPushButton*>())
+            if((b->objectName()=="GroupDownload"||b->objectName()=="GroupDownloadOptions")&&b->isVisibleTo(&page))bulkOnUnknown=true;
+        check(!bulkOnUnknown,"unattributed bucket offers no one-click download");
+        int options=0;for(auto *b:page.findChildren<QPushButton*>("GroupDownloadOptions"))if(b->isVisibleTo(&page)&&b->isEnabled())++options;
+        check(options==2,"each real group has a download options button");
+    }
+    {
         QTcpServer server;check(server.listen(QHostAddress::LocalHost),"local RSS fixture starts");
         const QString base="http://127.0.0.1:"+QString::number(server.serverPort());
         QObject::connect(&server,&QTcpServer::newConnection,&app,[&]{while(auto *socket=server.nextPendingConnection()) {

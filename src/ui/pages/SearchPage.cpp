@@ -4,6 +4,7 @@
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/Controls.h"
+#include "ui/Motion.h"
 #include "net/BangumiClient.h"
 
 #include <QEvent>
@@ -50,7 +51,8 @@ SearchPage::SearchPage(BangumiClient *bangumi, ImageLoader *images, QWidget *par
 
     m_grid=new CardGrid(m_images); connect(m_grid,&CardGrid::cardClicked,this,&SearchPage::animeSelected);
     m_empty=new EmptyState("search",QStringLiteral("想看些什么？"),QStringLiteral("输入番名开始搜索，进入作品后可查看各站资源。"),this);
-    layout->addWidget(overlayStack(scrollArea(m_grid),m_empty,this),1);
+    m_results=overlayStack(scrollArea(m_grid),m_empty,this);
+    layout->addWidget(m_results,1);
     connect(m_edit,&QLineEdit::textChanged,this,[this](const QString &text) {
         if(text.trimmed().isEmpty()&&!m_edit->composing())resetSearch();
     });
@@ -110,6 +112,7 @@ void SearchPage::search()
                              QStringLiteral("换个关键字或使用日文原名试试。"));
             return;
         }
+        Motion::crossfade(m_results);
         m_grid->setSubjects(subjects);
         m_status->setText(QStringLiteral("找到 %1 部番剧").arg(subjects.size()));
         m_empty->hide();

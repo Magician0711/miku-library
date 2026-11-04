@@ -2,6 +2,7 @@
 
 #include "Models.h"
 
+#include <QHash>
 #include <QObject>
 #include <QUrl>
 
@@ -25,4 +26,9 @@ public:
 private:
     QUrl endpoint(const QString &path) const;
     HttpClient *m_http;
+    // Subject metadata rarely changes within a session; reopening a show or the
+    // library should not wait for the network again. Concurrent requests for the
+    // same id share one reply.
+    QHash<int, AnimeSubject> m_subjects;
+    QHash<int, QVector<std::function<void(AnimeSubject, QString)>>> m_subjectWaiters;
 };

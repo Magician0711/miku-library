@@ -1,5 +1,12 @@
 #include "Overlays.h"
 #include "Theme.h"
+#include "Motion.h"
+#include <QButtonGroup>
+#include <QAbstractSpinBox>
+#include <QComboBox>
+#include <QCheckBox>
+#include <QStackedWidget>
+#include <tuple>
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -128,7 +135,26 @@ protected:
             present(widget,text,help->globalPos());
             event->accept();return true;
         }
+        // Scrolling a page must not change a dropdown or number box that merely
+        // passes under the pointer. Qt's default wheel focus would grab focus first,
+        // so they take focus by click or Tab only, and unfocused ones hand the
+        // wheel back to the page.
+        if(event->type()==QEvent::Polish && (qobject_cast<QComboBox *>(widget)||qobject_cast<QAbstractSpinBox *>(widget))
+           && widget->focusPolicy()==Qt::WheelFocus)
+            widget->setFocusPolicy(Qt::StrongFocus);
+        if(event->type()==QEvent::Wheel && widget && !widget->hasFocus()
+           && (qobject_cast<QComboBox *>(widget)||qobject_cast<QAbstractSpinBox *>(widget))) {
+            event->ignore();
+            return true;
+        }
         switch(event->type()) {
+        case QEvent::Show:
+            // Menus, dropdowns, dialogs and tooltips ease in instead of popping.
+            if(widget && widget->isWindow() && !widget->testAttribute(Qt::WA_TransparentForMouseEvents)) {
+                const auto type=widget->windowType();
+                if(type==Qt::Popup||type==Qt::Dialog||type==Qt::ToolTip||type==Qt::Tool)Motion::fadeIn(widget);
+            }
+            break;
         case QEvent::MouseButtonPress: case QEvent::Wheel: case QEvent::KeyPress:
         case QEvent::WindowDeactivate: case QEvent::ApplicationDeactivate:
             dismiss();break;
@@ -369,5 +395,191 @@ QString chooseVideo(QWidget *parent,const QStringList &paths)
     buttons->addWidget(cancel);buttons->addWidget(play);dialog.content->addLayout(buttons);
     if(dialog.exec()!=QDialog::Accepted||!list->currentItem())return {};
     return list->currentItem()->data(Qt::UserRole).toString();
+}
+
+QString playerNote()
+{
+    return QStringLiteral("本软件不含播放器，下载完成的视频会交给系统默认播放器打开。番剧资源多为 HEVC / 10bit 编码，"
+                          "并常带内封或外挂的 ASS 特效字幕，建议安装 PotPlayer、mpv 或 MPC-HC 等能完整显示这些字幕的播放器，"
+                          "并将其设为 .mkv / .mp4 的默认打开方式。");
+}
+
+QString freeSoftwareNote()
+{
+    return QStringLiteral("Anime Nexus 是免费的开源项目，从不以任何形式收费。如果你是付费购买、"
+                          "或通过付费下载渠道获得本软件的，请立即申请退款并向平台举报售卖者。");
+}
+
+QStringList disclaimerItems()
+{
+    return {
+        QStringLiteral("本软件仅是番剧资源的检索与下载管理工具，不提供、不存储、不上传任何影视内容。检索结果全部来自第三方公开站点，其内容与本软件无关。"),
+        QStringLiteral("通过本软件下载的番剧仅供个人学习与交流使用，请在下载后 24 小时内删除。"),
+        QStringLiteral("请支持正版。喜欢的作品请通过正版平台观看或购买，以支持创作者。"),
+        QStringLiteral("请遵守所在地法律法规。不得将下载内容用于商业用途、公开放映、上传分享、二次分发或其他侵犯著作权的行为；由此产生的一切法律责任由使用者自行承担。"),
+        QStringLiteral("BitTorrent 下载时会同时向其他用户上传已下载的数据（做种）。请了解所在地关于 P2P 传输的规定；可在「偏好设置 → 传输与队列」限制上传，或开启下载完成后自动停止。"),
+        QStringLiteral("如权利人认为某些资源侵犯其合法权益，请联系提供该资源的站点处理。本软件不对第三方站点的内容、可用性及合法性负责。"),
+        QStringLiteral("本软件按「现状」提供，不对下载内容的完整性、安全性及因使用本软件造成的任何损失承担责任。"),
+        QStringLiteral("继续使用即表示您已阅读、理解并同意以上全部声明。"),
+    };
+}
+
+namespace {
+// Icon tile for the welcome guide; paints at paint time so it follows theme changes.
+class GuideTile final : public QLabel {
+public:
+    GuideTile(const QString &icon, Theme::Role role, const char *tone, QWidget *parent)
+        : QLabel(parent), m_icon(Theme::icon(icon, role))
+    {
+        setObjectName("GuideTile");
+        setProperty("tone", tone);
+        setFixedSize(36, 36);
+    }
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QLabel::paintEvent(event);
+        QPainter painter(this);
+        m_icon.paint(&painter, QRect((width() - 20) / 2, (height() - 20) / 2, 20, 20));
+    }
+private:
+    QIcon m_icon;
+};
+
+// One guide row: tile, title, explanation, and an optional control on the right.
+QWidget *guideRow(QWidget *parent, const QString &icon, Theme::Role role, const char *tone,
+                  const QString &title, const QString &text, QWidget *trailing = nullptr)
+{
+    auto *row = new QWidget(parent);
+    auto *line = new QHBoxLayout(row); line->setContentsMargins(0, 0, 0, 0); line->setSpacing(12);
+    line->addWidget(new GuideTile(icon, role, tone, row), 0, Qt::AlignTop);
+    auto *textCol = new QVBoxLayout; textCol->setSpacing(2);
+    auto *name = new QLabel(title, row); name->setObjectName("GuideNoteTitle"); textCol->addWidget(name);
+    auto *body = new QLabel(text, row); body->setObjectName("GuideNoteText"); body->setWordWrap(true);
+    body->setTextInteractionFlags(Qt::TextSelectableByMouse); textCol->addWidget(body);
+    line->addLayout(textCol, 1);
+    if (trailing) { trailing->setParent(row); line->addWidget(trailing, 0, Qt::AlignVCenter); }
+    return row;
+}
+
+// A titled card holding rows separated by hairlines; every block of the guide uses it.
+QWidget *guideSection(QWidget *parent, const QString &heading, const QList<QWidget *> &rows)
+{
+    auto *section = new QWidget(parent);
+    auto *col = new QVBoxLayout(section); col->setContentsMargins(0, 0, 0, 0); col->setSpacing(6);
+    auto *label = new QLabel(heading, section); label->setObjectName("GuideSection"); col->addWidget(label);
+    auto *card = new QFrame(section); card->setObjectName("GuideNote");
+    auto *cardCol = new QVBoxLayout(card); cardCol->setContentsMargins(14, 12, 14, 12); cardCol->setSpacing(10);
+    for (int i = 0; i < rows.size(); ++i) {
+        if (i > 0) { auto *line = new QFrame(card); line->setObjectName("SettingDivider"); line->setFixedHeight(1); cardCol->addWidget(line); }
+        rows.at(i)->setParent(card);
+        cardCol->addWidget(rows.at(i));
+    }
+    col->addWidget(card);
+    return section;
+}
+
+QWidget *disclaimerList(QWidget *parent)
+{
+    auto *body=new QWidget(parent);body->setObjectName("ScrollBody");
+    auto *col=new QVBoxLayout(body);col->setContentsMargins(0,0,8,0);col->setSpacing(10);
+    const auto items=disclaimerItems();
+    for(int i=0;i<items.size();++i) {
+        auto *row=new QHBoxLayout;row->setSpacing(10);
+        auto *number=new QLabel(QString::number(i+1),body);number->setObjectName("GuideNumber");
+        number->setFixedSize(22,22);number->setAlignment(Qt::AlignCenter);row->addWidget(number,0,Qt::AlignTop);
+        auto *text=new QLabel(items.at(i),body);text->setObjectName(i==1?"GuideEmphasis":"GuideNoteText");
+        text->setWordWrap(true);text->setTextInteractionFlags(Qt::TextSelectableByMouse);row->addWidget(text,1);
+        col->addLayout(row);
+    }
+    col->addStretch(1);
+    auto *scroll=new QScrollArea(parent);scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setWidget(body);scroll->setFixedHeight(320);
+    return scroll;
+}
+
+// 跟随系统 / 浅色 / 深色, applied immediately so the guide itself previews the choice.
+QWidget *themeChooser(QWidget *parent)
+{
+    auto *bar = new QFrame(parent); bar->setObjectName("Segmented");
+    auto *line = new QHBoxLayout(bar); line->setContentsMargins(4, 4, 4, 4); line->setSpacing(2);
+    auto *group = new QButtonGroup(bar);
+    for (const auto &[mode, icon] : {std::pair{Theme::Mode::System, "monitor"}, {Theme::Mode::Light, "sun"}, {Theme::Mode::Dark, "moon"}}) {
+        auto *button = new QPushButton(Theme::icon(icon), Theme::modeName(mode), bar);
+        button->setObjectName("SegmentButton"); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor);
+        button->setChecked(Theme::mode() == mode);
+        group->addButton(button, int(mode)); line->addWidget(button);
+    }
+    new Motion::SlidingIndicator(bar, group->buttons(), Motion::SlidingIndicator::Look::Outlined, 8);
+    QObject::connect(group, &QButtonGroup::idClicked, bar, [](int id) { Theme::setMode(Theme::Mode(id)); });
+    return bar;
+}
+}
+
+bool firstRunGuide(QWidget *parent,bool review)
+{
+    DialogSurface dialog(parent,review?QStringLiteral("使用声明"):QStringLiteral("欢迎使用 Anime Nexus"));
+    dialog.setObjectName("FirstRunGuide");dialog.setFixedWidth(620);
+    auto *pages=new QStackedWidget(&dialog);dialog.content->addWidget(pages);
+    using P=Theme::Palette;
+
+    // Page 1: quick start, two things to know, and the theme.
+    auto *start=new QWidget(pages);auto *startCol=new QVBoxLayout(start);startCol->setContentsMargins(0,0,0,0);startCol->setSpacing(14);
+    startCol->addWidget(bodyText(QStringLiteral("聚合多个资源站，按字幕组整理番剧资源，并直接管理下载与本地视频。"),start));
+    startCol->addWidget(guideSection(start,QStringLiteral("三步上手"),{
+        guideRow(start,"calendar",&P::accentText,"accent",QStringLiteral("找番"),QStringLiteral("在「本季放送」按星期浏览新番，或按 Ctrl+K 用中文、日文或英文番名搜索。")),
+        guideRow(start,"filter",&P::accentText,"accent",QStringLiteral("选字幕组"),QStringLiteral("番剧详情优先显示人气高、资源多的字幕组，可按季度、清晰度、字幕和关键词筛选。")),
+        guideRow(start,"download",&P::accentText,"accent",QStringLiteral("下载与观看"),QStringLiteral("点「下载」获取单集，或用「一键下载」补齐缺集，旁边的 ▾ 可选字幕、清晰度和集数范围；完成后在「我的追番」点「播放」。"))}));
+    startCol->addWidget(guideSection(start,QStringLiteral("使用须知"),{
+        guideRow(start,"play",&P::accentText,"accent",QStringLiteral("关于播放"),playerNote()),
+        guideRow(start,"info",&P::warn,"warn",QStringLiteral("免费开源"),freeSoftwareNote())}));
+    startCol->addWidget(guideSection(start,QStringLiteral("界面主题"),{
+        guideRow(start,"sun",&P::accentText,"accent",QStringLiteral("选择配色"),QStringLiteral("立即生效，之后可在右上角或「偏好设置 → 外观」随时修改。"),themeChooser(start))}));
+    startCol->addStretch(1);
+    pages->addWidget(start);
+
+    // Page 2: the declaration, which must be accepted on first run.
+    auto *terms=new QWidget(pages);auto *termsCol=new QVBoxLayout(terms);termsCol->setContentsMargins(0,0,0,0);termsCol->setSpacing(12);
+    auto *heading=new QLabel(QStringLiteral("使用声明"),terms);heading->setObjectName("GuideSection");termsCol->addWidget(heading);
+    auto *termsCard=new QFrame(terms);termsCard->setObjectName("GuideNote");
+    auto *termsCardCol=new QVBoxLayout(termsCard);termsCardCol->setContentsMargins(14,12,8,12);
+    termsCardCol->addWidget(disclaimerList(termsCard));termsCol->addWidget(termsCard);
+    auto *agree=new QCheckBox(QStringLiteral("我已阅读并同意以上声明"),terms);agree->setObjectName("GuideAgree");
+    agree->setVisible(!review);termsCol->addWidget(agree);
+    termsCol->addStretch(1);
+    pages->addWidget(terms);
+
+    auto *buttons=new QHBoxLayout;buttons->setSpacing(8);
+    auto *step=new QLabel(terms);step->setObjectName("Faint");
+    auto *back=new QPushButton(QStringLiteral("上一步"),&dialog);back->setObjectName("Ghost");
+    auto *quit=new QPushButton(QStringLiteral("不同意并退出"),&dialog);quit->setObjectName("Ghost");
+    auto *next=new QPushButton(QStringLiteral("下一步"),&dialog);next->setObjectName("Primary");next->setDefault(true);
+    buttons->addWidget(step);buttons->addStretch(1);buttons->addWidget(back);buttons->addWidget(quit);buttons->addWidget(next);
+    dialog.content->addLayout(buttons);
+
+    auto update=[&] {
+        const bool last=pages->currentIndex()==1;
+        step->setText(review?QString():QStringLiteral("%1 / 2").arg(pages->currentIndex()+1));
+        back->setVisible(pages->currentIndex()>0&&!review);
+        quit->setVisible(last&&!review);
+        next->setText(review?QStringLiteral("关闭"):last?QStringLiteral("同意并开始使用"):QStringLiteral("下一步"));
+        next->setEnabled(review||!last||agree->isChecked());
+    };
+    QObject::connect(agree,&QCheckBox::toggled,&dialog,update);
+    QObject::connect(back,&QPushButton::clicked,&dialog,[&]{Motion::crossfade(pages,Motion::Fast);pages->setCurrentIndex(0);update();});
+    QObject::connect(quit,&QPushButton::clicked,&dialog,&QDialog::reject);
+    QObject::connect(next,&QPushButton::clicked,&dialog,[&] {
+        if(review||pages->currentIndex()==1){dialog.accept();return;}
+        Motion::crossfade(pages,Motion::Fast);pages->setCurrentIndex(1);update();
+    });
+    if(review)pages->setCurrentIndex(1);
+    update();
+    next->setFocus(Qt::OtherFocusReason);   // not the first theme button
+    dialog.adjustSize();
+    // Wrapped labels report heights for a narrower default width; size the dialog
+    // from the layout's real height at its fixed width instead.
+    if(auto *layout=dialog.layout();layout&&layout->hasHeightForWidth())
+        dialog.resize(dialog.width(),layout->totalHeightForWidth(dialog.width()));
+    return dialog.exec()==QDialog::Accepted&&(review||agree->isChecked());
 }
 }

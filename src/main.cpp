@@ -15,6 +15,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QMutex>
 #include <QTextStream>
 #include <QTimer>
 
@@ -24,6 +26,23 @@ namespace {
 QString logPath()
 {
     return AppConfig::dataDir() + QStringLiteral("/anime_nexus_cpp.log");
+}
+
+// One open handle for the session; messages can arrive from worker threads.
+QFile *logFile()
+{
+    static QFile *file = [] {
+        const QString path = logPath();
+        // Keep the log bounded: start a fresh file once it passes 1 MiB.
+        if (QFileInfo(path).size() > (1 << 20)) {
+            QFile::remove(path + QStringLiteral(".old"));
+            QFile::rename(path, path + QStringLiteral(".old"));
+        }
+        auto *f = new QFile(path);
+        if (!f->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) { delete f; return static_cast<QFile *>(nullptr); }
+        return f;
+    }();
+    return file;
 }
 
 void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
@@ -36,14 +55,16 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
     case QtCriticalMsg: level = "ERROR"; break;
     case QtFatalMsg: level = "FATAL"; break;
     }
-    QFile file(logPath());
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+    static QMutex mutex;
+    const QMutexLocker lock(&mutex);
+    QFile *file = logFile();
+    if (!file)
         return;
-    QTextStream stream(&file);
+    QTextStream stream(file);
     stream << QDateTime::currentDateTime().toString(Qt::ISODate) << " [" << level << "] "
            << (context.category ? context.category : "default") << ": " << message << '\n';
-    if (type == QtFatalMsg)
-        stream.flush();
+    stream.flush();
+    file->flush();
 }
 
 QString catalogPath()
@@ -64,7 +85,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     app.setApplicationName(QStringLiteral("Anime Nexus"));
-    app.setApplicationVersion(QStringLiteral("0.4.0"));
+    app.setApplicationVersion(QStringLiteral(ANIME_NEXUS_VERSION));
     app.setOrganizationName(QStringLiteral("anime-nexus"));
     Theme::applyTheme(&app);
     app.setQuitOnLastWindowClosed(false);
@@ -79,6 +100,16 @@ int main(int argc, char *argv[])
     AppConfig config = AppConfig::load();
     if (const auto appearance = Theme::modeFromString(config.appearance); appearance != Theme::mode())
         Theme::setMode(appearance);
+    // Quick start and usage declaration, once per declaration version.
+    if (config.disclaimerAccepted < Ui::kDisclaimerVersion) {
+        if (!Ui::firstRunGuide(nullptr))
+            return 0;
+        config.disclaimerAccepted = Ui::kDisclaimerVersion;
+        // The guide's theme picker applies live; keep whatever was chosen there.
+        config.appearance = Theme::modeToString(Theme::mode());
+        if (!config.save())
+            Ui::message(nullptr, QStringLiteral("设置未保存"), QStringLiteral("无法写入配置文件，下次启动会再次显示使用声明。"), Ui::Notice::Warning);
+    }
     QString directoryError;
     const auto directoryState=config.prepareDownloadDirectory(&directoryError);
     if(directoryState==AppConfig::DownloadDirectoryState::MissingSaved

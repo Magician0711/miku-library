@@ -15,6 +15,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QHBoxLayout>
+#include <QItemSelection>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
@@ -152,7 +153,7 @@ DownloadsPage::DownloadsPage(TorrentEngine *engine,LocalLibrary *library,AppConf
     m_upSpeed=statTile(metrics,"export",QStringLiteral("上传速度")); layout->addLayout(metrics);
 
     auto *toolbar=new QHBoxLayout; toolbar->setSpacing(8);
-    m_status=label(QStringLiteral("选中任务后操作，右键可查看更多选项"),"Faint",false,this); toolbar->addWidget(m_status,1);
+    m_status=label(QStringLiteral("按住 Ctrl 或 Shift 可多选，右键查看更多选项"),"Faint",false,this); toolbar->addWidget(m_status,1);
     m_openClient=new QPushButton(QStringLiteral("打开下载器"),this);m_openClient->setIcon(Theme::icon("external"));m_openClient->hide();toolbar->addWidget(m_openClient);
     connect(m_openClient,&QPushButton::clicked,this,&DownloadsPage::openExternalClient);
     const QStringList names={QStringLiteral("暂停"),QStringLiteral("恢复"),QStringLiteral("移除任务")};
@@ -171,6 +172,7 @@ DownloadsPage::DownloadsPage(TorrentEngine *engine,LocalLibrary *library,AppConf
     m_table->setHorizontalHeaderLabels({QStringLiteral("任务"),QStringLiteral("进度"),QStringLiteral("速度"),
         QStringLiteral("大小"),QStringLiteral("做种 / 连接"),QStringLiteral("剩余时间")});
     prepareTable(m_table);
+    m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->verticalHeader()->setDefaultSectionSize(58);
     m_table->horizontalHeader()->setSectionResizeMode(TaskColumn,QHeaderView::Stretch);
     m_table->setColumnWidth(ProgressColumn,190); m_table->setColumnWidth(SpeedColumn,120);
@@ -209,7 +211,7 @@ void DownloadsPage::hideEvent(QHideEvent *event)
 
 void DownloadsPage::refresh()
 {
-    const QString previous = selectedHash();
+    const QStringList previous = selectedHashes();
     auto tasks = m_engine->listTorrents();
     const auto remote=m_rpc?m_rpc->tasks():QHash<QString,DownloadTask>{};
     static const QSet<QString> externalPhases={"external","external_paused","external_pending","error","complete"};
@@ -225,7 +227,7 @@ void DownloadsPage::refresh()
     m_empty->setVisible(tasks.isEmpty());
     m_table->setUpdatesEnabled(false);
     m_table->setRowCount(tasks.size());
-    int selectRow=-1;
+    QList<int> keepSelected;
     for (int row = 0; row < tasks.size(); ++row) {
         const auto &task = tasks.at(row);
         down+=task.dlSpeed; up+=task.upSpeed;
@@ -252,10 +254,15 @@ void DownloadsPage::refresh()
         cell(SizeColumn)->setText(fmtSize(task.size));
         cell(PeersColumn)->setText(external?QStringLiteral("—"):QStringLiteral("%1 / %2").arg(task.seeders).arg(task.leechers));
         cell(EtaColumn)->setText(task.status==DownloadStatus::Downloading?fmtEta(task.eta):QStringLiteral("—"));
-        if(task.qbtHash==previous)selectRow=row;
+        if(previous.contains(task.qbtHash))keepSelected.append(row);
     }
     m_table->setUpdatesEnabled(true);
-    if(selectRow>=0&&selectedHash()!=previous)m_table->selectRow(selectRow);
+    // Rows can move between refreshes; restore the selection by task identity.
+    if(selectedHashes()!=previous) {
+        QItemSelection selection;
+        for(int row:keepSelected)selection.select(m_table->model()->index(row,0),m_table->model()->index(row,ColumnCount-1));
+        m_table->selectionModel()->select(selection,QItemSelectionModel::ClearAndSelect);
+    }
     m_taskCount->setText(QString::number(active));
     m_downSpeed->setText(fmtSpeed(down)); m_upSpeed->setText(fmtSpeed(up));
     m_summary->setText(tasks.isEmpty()?QString():QStringLiteral("共 %1 个任务").arg(tasks.size()));
@@ -265,28 +272,41 @@ void DownloadsPage::refresh()
 
 void DownloadsPage::updateActions()
 {
-    const QString key=selectedHash();const bool external=key.startsWith("external:");
-    const auto item=external?m_library->item(key.mid(9)):std::nullopt;
-    const bool managed=item&&m_rpc&&m_rpc->manageable(*item);
-    m_actions[0]->setEnabled(!key.isEmpty()&&(!external||managed));m_actions[1]->setEnabled(!key.isEmpty()&&(!external||managed));
-    m_actions[2]->setEnabled(!key.isEmpty());m_actions[2]->setText(external&&!managed?QStringLiteral("移除记录"):QStringLiteral("移除任务"));
-    m_openClient->setVisible(external);
+    const auto keys=selectedHashes();
+    int controllable=0,unmanaged=0;
+    for(const auto &key:keys) {
+        if(!key.startsWith("external:")){++controllable;continue;}
+        const auto item=m_library->item(key.mid(9));
+        if(item&&m_rpc&&m_rpc->manageable(*item))++controllable;else ++unmanaged;
+    }
+    m_actions[0]->setEnabled(controllable>0);m_actions[1]->setEnabled(controllable>0);
+    m_actions[2]->setEnabled(!keys.isEmpty());
+    if(keys.size()>1)m_actions[2]->setText(QStringLiteral("移除 %1 项").arg(keys.size()));
+    else m_actions[2]->setText(unmanaged?QStringLiteral("移除记录"):QStringLiteral("移除任务"));
+    m_openClient->setVisible(keys.size()==1&&keys.first().startsWith("external:"));
+    m_status->setText(keys.size()>1?QStringLiteral("已选择 %1 个任务").arg(keys.size())
+                                    :QStringLiteral("按住 Ctrl 或 Shift 可多选，右键查看更多选项"));
+}
+
+QStringList DownloadsPage::selectedHashes() const
+{
+    QStringList keys;
+    for(const auto &index:m_table->selectionModel()->selectedRows())
+        if(const auto *item=m_table->item(index.row(),TaskColumn))keys.append(item->data(KeyRole).toString());
+    return keys;
 }
 
 QString DownloadsPage::selectedHash() const
 {
-    const auto rows = m_table->selectionModel()->selectedRows();
-    if (rows.isEmpty())
-        return {};
-    const auto *item = m_table->item(rows.first().row(), TaskColumn);
-    return item ? item->data(KeyRole).toString() : QString();
+    return selectedHashes().value(0);
 }
 
 void DownloadsPage::showContextMenu(const QPoint &position)
 {
     const int row=m_table->rowAt(position.y());
     if(row<0)return;
-    m_table->selectRow(row);
+    // Right-clicking outside the selection acts on that row alone.
+    if(!m_table->selectionModel()->isRowSelected(row,{}))m_table->selectRow(row);
     const auto *item=m_table->item(row,TaskColumn);
     QMenu menu(this);
     menu.addAction(Theme::icon("pause"),m_actions[0]->text(),this,&DownloadsPage::pauseSelected)->setEnabled(m_actions[0]->isEnabled());
@@ -311,39 +331,41 @@ void DownloadsPage::openExternalClient()
     if(!ExternalDownloader::start(command,&error))Ui::message(this,QStringLiteral("无法打开下载器"),error,Ui::Notice::Warning);
 }
 
-void DownloadsPage::pauseSelected()
+void DownloadsPage::control(const QString &action)
 {
-    const auto hash = selectedHash();
-    if(hash.startsWith("external:")){if(m_rpc)m_rpc->control(hash.mid(9),"pause");return;}
-    if (!hash.isEmpty())
-        m_engine->pause(hash);
+    for(const auto &key:selectedHashes()) {
+        if(key.startsWith("external:")){if(m_rpc)m_rpc->control(key.mid(9),action);continue;}
+        if(action=="pause")m_engine->pause(key);else m_engine->resume(key);
+    }
 }
 
-void DownloadsPage::resumeSelected()
-{
-    const auto hash = selectedHash();
-    if(hash.startsWith("external:")){if(m_rpc)m_rpc->control(hash.mid(9),"resume");return;}
-    if (!hash.isEmpty())
-        m_engine->resume(hash);
-}
+void DownloadsPage::pauseSelected() { control(QStringLiteral("pause")); }
+void DownloadsPage::resumeSelected() { control(QStringLiteral("resume")); }
 
 void DownloadsPage::deleteSelected()
 {
-    const auto hash = selectedHash();
-    if (hash.isEmpty())
-        return;
-    if(hash.startsWith("external:")) {
-        auto item=m_library->item(hash.mid(9));if(!item)return;
-        if(m_rpc&&m_rpc->manageable(*item)){m_rpc->control(item->key,"remove");return;}
-        item->phase="cancelled";QString error;
-        if(!m_library->put(*item,&error))Ui::message(this,QStringLiteral("无法移除记录"),error,Ui::Notice::Warning);
-        else Ui::message(this,QStringLiteral("记录已移除"),QStringLiteral("对应下载器中的任务仍会继续；需要取消时请在该软件中操作。"));
-        refresh();return;
+    const auto keys=selectedHashes();
+    if(keys.isEmpty())return;
+    QStringList builtin;QVector<LibraryItem> records;
+    for(const auto &key:keys) {
+        if(!key.startsWith("external:")){builtin.append(key);continue;}
+        auto item=m_library->item(key.mid(9));if(!item)continue;
+        if(m_rpc&&m_rpc->manageable(*item))m_rpc->control(item->key,"remove");
+        else records.append(*item);
     }
-    const auto choice = Ui::confirmRemoval(this);
-    if (choice == Ui::Removal::Cancel)
-        return;
-    m_engine->remove(hash, choice == Ui::Removal::DeleteFiles);
+    // Built-in tasks: one confirmation covers the whole selection.
+    if(!builtin.isEmpty()) {
+        const auto choice=Ui::confirmRemoval(this);
+        if(choice!=Ui::Removal::Cancel)
+            for(const auto &hash:builtin)m_engine->remove(hash,choice==Ui::Removal::DeleteFiles);
+    }
+    if(!records.isEmpty()) {
+        QStringList errors;
+        for(auto item:records){item.phase="cancelled";QString error;if(!m_library->put(item,&error))errors.append(error);}
+        if(!errors.isEmpty())Ui::message(this,QStringLiteral("无法移除记录"),errors.join("\n"),Ui::Notice::Warning);
+        else Ui::message(this,QStringLiteral("记录已移除"),QStringLiteral("对应下载器中的任务仍会继续；需要取消时请在该软件中操作。"));
+    }
+    refresh();
 }
 
 void DownloadsPage::updateDownloader()

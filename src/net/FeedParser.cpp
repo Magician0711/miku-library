@@ -134,11 +134,14 @@ QVector<ResourceResult> parseRss(const QByteArray &data, const SiteEntry &site, 
         else if (!result.torrentUrl.isEmpty())
             result.infoHash = hexHashFromUrl(result.torrentUrl);
 
-        result.fileSize = parseSize(fields.sizeText);
+        // Some feeds put a placeholder such as length="1" on the enclosure; no
+        // video release is under 1 KiB, so treat tiny values as unknown.
+        auto plausible = [](qint64 size) { return size >= 1024 ? size : 0; };
+        result.fileSize = plausible(parseSize(fields.sizeText));
         if (result.fileSize <= 0)
-            result.fileSize = parseSize(fields.contentLength);
+            result.fileSize = plausible(parseSize(fields.contentLength));
         if (result.fileSize <= 0)
-            result.fileSize = sizeFromHtml(fields.description);
+            result.fileSize = plausible(sizeFromHtml(fields.description));
 
         bool ok = false;
         const int seeders = fields.seeders.toInt(&ok);

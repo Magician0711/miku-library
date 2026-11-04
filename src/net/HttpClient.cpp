@@ -11,7 +11,7 @@ HttpClient::HttpClient(QObject *parent)
 
 QString HttpClient::userAgent()
 {
-    return QStringLiteral("anime-nexus-cpp/0.1.0 (Windows; Qt)");
+    return QStringLiteral("anime-nexus-cpp/" ANIME_NEXUS_VERSION " (Windows; Qt)");
 }
 
 QNetworkRequest HttpClient::request(const QUrl &url, int timeoutMs) const

@@ -91,7 +91,8 @@ void mergeResource(ResourceResult &target,const ResourceResult &incoming)
     else for(const auto &source:incoming.sources)add(source);
     for(const auto &name:incoming.seenOn)if(!target.seenOn.contains(name))target.seenOn.append(name);
     target.seeders=qMax(target.seeders,incoming.seeders);
-    if(target.fileSize<=0)target.fileSize=incoming.fileSize;
+    // Keep a real size when another site only reported an unknown or placeholder one.
+    if(target.fileSize<1024&&incoming.fileSize>target.fileSize)target.fileSize=incoming.fileSize;
     if(target.torrentUrl.isEmpty()&&target.magnetUri.isEmpty()) {
         for(const auto &source:target.sources)if(!source.torrentUrl.isEmpty()||!source.magnetUri.isEmpty()) {
             target.siteId=source.siteId;target.siteName=source.siteName;target.torrentUrl=source.torrentUrl;

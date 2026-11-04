@@ -1,6 +1,7 @@
 {
-  "date": "2026-11-03",
-  "passed": 292,
+  "date": "2026-11-04",
+  "version": "0.6.0",
+  "passed": 329,
   "failed": 0,
   "tests": [
     {
@@ -15,7 +16,7 @@
     },
     {
       "test": "ui-audit",
-      "passed": 25,
+      "passed": 28,
       "failed": 0
     },
     {
@@ -25,12 +26,12 @@
     },
     {
       "test": "settings-limits",
-      "passed": 25,
+      "passed": 30,
       "failed": 0
     },
     {
       "test": "detail-library",
-      "passed": 24,
+      "passed": 28,
       "failed": 0
     },
     {
@@ -40,12 +41,12 @@
     },
     {
       "test": "local-library",
-      "passed": 49,
+      "passed": 70,
       "failed": 0
     },
     {
       "test": "optimization",
-      "passed": 18,
+      "passed": 22,
       "failed": 0
     },
     {

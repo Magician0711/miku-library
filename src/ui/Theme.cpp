@@ -1,5 +1,6 @@
 #include "Theme.h"
 #include "Overlays.h"
+#include "Motion.h"
 #include <QApplication>
 #include <QDir>
 #include <QFrame>
@@ -139,7 +140,7 @@ void drawGlyph(QPainter &p, const QString &name, const QColor &color)
 const char *kStyleSheet = R"QSS(
 QWidget { color:$text$; font-family:"Segoe UI","Microsoft YaHei UI"; font-size:10pt; }
 QMainWindow,#AppBody { background:$chrome$; }
-QStackedWidget,#Content,#ScrollBody { background:transparent; }
+QStackedWidget,#ScrollBody { background:transparent; }
 #Canvas { background:$bg$; border:1px solid $border$; border-right:none; border-bottom:none; border-top-left-radius:14px; }
 QLabel { background:transparent; }
 
@@ -163,9 +164,12 @@ QToolButton:focus { border:1px solid $accentText$; }
 QPushButton#NavButton { background:transparent; border:none; border-radius:8px; text-align:left; padding:0 12px; min-height:40px; max-height:40px; color:$text2$; font-size:10pt; }
 QPushButton#NavButton:hover { background:$navHover$; color:$text$; }
 QPushButton#NavButton:focus { background:$navHover$; }
-QPushButton#NavButton:checked { background:$surface$; color:$accentText$; font-weight:600; }
+/* the checked background is a Motion::SlidingIndicator gliding behind the buttons */
+QPushButton#NavButton:checked { background:transparent; color:$accentText$; font-weight:600; }
 QLabel#NavBadge { background:$accent$; color:$accentInk$; border-radius:9px; font-size:8pt; font-weight:700; padding:0 6px; }
-#EngineBadge { background:$surface$; border:1px solid $border$; border-radius:10px; }
+QPushButton#EngineBadge { background:$surface$; border:1px solid $border$; border-radius:10px; padding:0; min-height:54px; max-height:54px; text-align:left; }
+QPushButton#EngineBadge:hover { border-color:$borderStrong$; }
+QPushButton#EngineBadge:focus { border-color:$accentText$; }
 QLabel#EngineCaption { color:$text3$; font-size:8.5pt; }
 QLabel#EngineName { color:$text$; font-size:9.5pt; font-weight:600; }
 QToolButton#DownloaderSwitch { background:transparent; border:none; border-radius:6px; }
@@ -176,18 +180,15 @@ QLabel#PageTitle { font-size:17pt; font-weight:650; color:$text$; }
 QLabel#PageMeta { color:$text3$; font-size:9.5pt; padding-top:6px; }
 QLabel#H1 { font-size:21pt; font-weight:650; color:$text$; }
 QLabel#H2 { font-size:13pt; font-weight:600; color:$text$; }
-QLabel#H3 { font-size:11pt; font-weight:600; }
 QLabel#Muted { color:$text2$; }
-QLabel#Faint,QLabel#Subtle { color:$text3$; font-size:9pt; }
-QLabel#Eyebrow { color:$accentText$; font-size:8.5pt; font-weight:600; }
+QLabel#Faint { color:$text3$; font-size:9pt; }
 QLabel#CardTitle { color:$text$; font-size:10pt; font-weight:600; }
 QLabel#MetricValue { color:$text$; font-size:15pt; font-weight:600; }
 QLabel#MetricCaption { color:$text3$; font-size:9pt; }
 QLabel#StatValue { color:$text$; font-size:10pt; font-weight:600; }
-QLabel#StatCaption { color:$text3$; font-size:9pt; }
 
 /* surfaces */
-#Panel,#SearchPanel,#MetricCard,#SettingsSection,#DetailHero,#FilterBar { background:$surface$; border:1px solid $border$; border-radius:12px; }
+#Panel,#SearchPanel,#MetricCard,#DetailHero,#FilterBar { background:$surface$; border:1px solid $border$; border-radius:12px; }
 #SearchPanel { border-radius:14px; }
 #SearchPanel[focused="true"] { border-color:$accent$; }
 #AnimeCard { background:transparent; border:none; }
@@ -262,26 +263,29 @@ QPushButton#Danger { color:$err$; }
 QPushButton#Danger:hover { background:$errSoft$; border-color:$errBorder$; }
 QPushButton#Danger:disabled { color:$disabledText$; }
 QPushButton#GroupDownload { padding:6px 14px; }
+QPushButton#GroupDownload[split="true"] { border-top-right-radius:0; border-bottom-right-radius:0; }
+QPushButton#GroupDownloadOptions { background:$accentSoft$; border:1px solid transparent; border-left:1px solid $accentSoft2$; border-top-left-radius:0; border-bottom-left-radius:0; padding:6px 7px; min-height:20px; }
+QPushButton#GroupDownloadOptions:hover { background:$accentSoft2$; }
+QPushButton#GroupDownloadOptions:focus { border-color:$accentText$; }
+QPushButton#GroupDownloadOptions:disabled { background:$surface2$; border-left-color:$border$; }
 
 /* segmented control */
 #Segmented { background:$surface3$; border-radius:10px; }
 QPushButton#DayTab,QPushButton#SegmentButton { background:transparent; border:1px solid transparent; border-radius:8px; color:$text2$; padding:6px 14px; }
 QPushButton#DayTab:hover,QPushButton#SegmentButton:hover { color:$text$; background:$segmentHover$; }
-QPushButton#DayTab:checked,QPushButton#SegmentButton:checked { background:$surface$; color:$accentText$; font-weight:600; border-color:$border$; }
+QPushButton#DayTab:checked,QPushButton#SegmentButton:checked { background:transparent; color:$accentText$; font-weight:600; border-color:transparent; }
 QPushButton#DayTab:focus,QPushButton#SegmentButton:focus { border-color:$borderStrong$; }
 
 /* resource groups */
 #GroupModule { background:$surface$; border:1px solid $border$; border-radius:12px; }
 QPushButton#GroupHeader { border:none; background:transparent; text-align:left; padding:14px 8px 14px 14px; font-weight:600; font-size:10.5pt; border-radius:10px; }
 QPushButton#GroupHeader:hover,QPushButton#GroupHeader:focus { color:$accentText$; }
-QLabel#GroupCount { background:$surface3$; color:$text2$; border-radius:9px; padding:1px 8px; font-size:8.5pt; font-weight:600; }
 #ResourceRow { background:transparent; border-top:1px solid $surface3$; }
 #ResourceRow:hover { background:$rowHover$; }
 QLabel#EpisodeBadge { background:$surface3$; color:$text$; border-radius:7px; padding:5px 0; font-size:9pt; font-weight:600; }
 QLabel#EpisodeBadge[batch="true"] { background:$accentSoft$; color:$accentText$; }
 QLabel#ResourceTitle { font-size:9.5pt; color:$text$; }
 QLabel#ResourceSources { color:$text3$; font-size:9pt; }
-QLabel#StateTag { color:$accentText$; font-size:9pt; font-weight:600; }
 
 /* tables */
 QTableView { background:$surface$; alternate-background-color:$rowHover$; border:1px solid $border$; border-radius:12px; gridline-color:transparent; selection-background-color:$accentSoft$; selection-color:$text$; outline:0; }
@@ -360,6 +364,17 @@ QListWidget#VideoList { background:$surface$; border:1px solid $border$; border-
 QListWidget#VideoList::item { padding:10px; border-radius:6px; }
 QListWidget#VideoList::item:selected { background:$accentSoft$; color:$accentText$; }
 #NoticeInfo { background:$accentSoft$; border-radius:12px; }
+QLabel#GuideNumber { background:$accentSoft$; color:$accentText$; border-radius:11px; font-size:9pt; font-weight:700; }
+QLabel#GuideEmphasis { color:$text$; font-weight:600; font-size:10pt; }
+QFrame#GuideNote { background:$surface2$; border:1px solid $border$; border-radius:10px; }
+QLabel#GuideSection { color:$text3$; font-size:9pt; font-weight:600; }
+QFrame#UpdatePanel { background:$surface$; border:1px solid $border$; border-radius:14px; }
+QFrame#UpdateRow { background:transparent; border:none; border-top:1px solid $surface3$; }
+QFrame#UpdateRow[first="true"] { border-top:none; }
+QLabel#GuideTile { background:$accentSoft$; border-radius:10px; }
+QLabel#GuideTile[tone="warn"] { background:$warnSoft$; }
+QLabel#GuideNoteTitle { color:$text$; font-weight:600; font-size:9.5pt; }
+QLabel#GuideNoteText { color:$text2$; font-size:9pt; }
 #NoticeWarning { background:$warnSoft$; border-radius:12px; }
 #NoticeError { background:$errSoft$; border-radius:12px; }
 #FilePicker { background:$surface$; }
@@ -460,9 +475,18 @@ QString resolveTokens(const QString &sheet)
     return out;
 }
 
-void applyPalette()
+void applyPalette(bool initial=false)
 {
-    g_palette=(g_mode==Theme::Mode::Dark || (g_mode==Theme::Mode::System && systemPrefersDark())) ? darkPalette() : lightPalette();
+    const bool dark=g_mode==Theme::Mode::Dark || (g_mode==Theme::Mode::System && systemPrefersDark());
+    if(!initial && dark==g_palette.dark) { emit Theme::notifier()->changed(); return; }
+    // Restyling repaints everything at once; dissolve from a snapshot instead.
+    // The snapshot must be taken while the old palette is still active, since
+    // custom-painted widgets read it directly.
+    if(!initial && qApp)
+        for(auto *window:QApplication::topLevelWidgets())
+            if(window->isVisible() && !window->isMinimized() && !(window->windowType()==Qt::Popup || window->windowType()==Qt::ToolTip))
+                Motion::crossfadeWindow(window,Motion::Slow);
+    g_palette=dark ? darkPalette() : lightPalette();
     if(!qApp)return;
     const Palette &c=g_palette;
     QPalette pal;
@@ -515,6 +539,8 @@ void setMode(Mode mode)
     applyPalette();
 }
 
+namespace { bool g_styled=false; }
+
 Notifier *notifier()
 {
     static Notifier *instance=new Notifier(qApp);
@@ -522,7 +548,6 @@ Notifier *notifier()
 }
 
 QFont uiFont(int size, QFont::Weight weight) { QFont f; f.setFamilies({"Segoe UI","Microsoft YaHei UI"}); f.setPointSize(size); f.setWeight(weight); return f; }
-QFont monoFont(int size) { QFont f("Cascadia Mono"); f.setPointSize(size); return f; }
 
 QIcon icon(const QString &name, Role role) { return QIcon(new LineIconEngine(name,role,role)); }
 QIcon stateIcon(const QString &name) { return QIcon(new LineIconEngine(name,&Palette::text2,&Palette::accentText)); }
@@ -541,6 +566,8 @@ void applyTheme(QApplication *app, Mode mode) {
          if(g_mode==Mode::System) applyPalette();
      });
  }
- setMode(mode);
+ g_mode=mode;
+ applyPalette(!g_styled);
+ g_styled=true;
 }
 }

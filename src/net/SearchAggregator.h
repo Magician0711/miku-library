@@ -22,7 +22,6 @@ public:
 
     void search(const QString &query, const AnimeSubject &subject,
                 const QSet<QString> &siteIds = {});
-    void setConcurrency(int value) { m_concurrency = qMax(1, value); }
     void cancel();
     int retainedJobs() const {return m_jobs.size();}
 
@@ -40,7 +39,7 @@ private:
     Catalog *m_catalog;
     HttpClient *m_http;
     BangumiClient *m_bangumi;
-    int m_concurrency = 6;
+    static constexpr int m_concurrency = 6;
     int m_generation = 0;
     int m_active = 0;
     int m_done = 0;

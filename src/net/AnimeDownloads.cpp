@@ -212,7 +212,7 @@ void AnimeDownloads::downloadOne(const AnimeSubject &subject,const ResourceResul
     if(reserve(subject,plan)){emit queued();processNext();}
 }
 
-void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<ResourceResult> &resources)
+void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<ResourceResult> &resources,const EpisodeRange &range)
 {
     if(m_config->downloader.selected=="builtin"&&!m_engine->running()){emit error(QStringLiteral("下载引擎未启动。"));return;}
     QString setupError;if(!ExternalDownloader::validate(m_config->downloader,&setupError)){emit error(setupError);return;}
@@ -225,10 +225,11 @@ void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<Res
     adoptExisting(subject,resources);
     for(const auto &i:m_library->items())if(i.subject.bangumiId==subject.bangumiId&&i.groupKey==group&&i.downloader=="builtin"&&i.phase=="paused")
         m_engine->resume(i.hash);
-    QString reason;const auto plans=m_library->plan(subject,resources,&reason,m_config->downloader.selected!="builtin"&&m_config->downloader.selected!="aria2"&&!m_rpc->enabled(m_config->downloader.selected));
+    QString reason;const auto plans=m_library->plan(subject,resources,&reason,m_config->downloader.selected!="builtin"&&m_config->downloader.selected!="aria2"&&!m_rpc->enabled(m_config->downloader.selected),range);
     int added=0;for(const auto &plan:plans)if(reserve(subject,plan))++added;
     if(added){emit queued();processNext();}
     else if(!reason.isEmpty())emit information(reason);
+    else if(range.active())emit information(QStringLiteral("所选集数范围内没有需要下载的集数：已下载、已加入任务，或当前检索结果中没有对应资源。"));
     else emit information(QStringLiteral("该字幕组当前可识别的集数已下载或已加入任务，无需重复下载。"));
 }
 

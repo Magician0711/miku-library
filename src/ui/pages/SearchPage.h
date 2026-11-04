@@ -36,6 +36,7 @@ private:
     QFrame *m_panel;
     QLabel *m_status;
     CardGrid *m_grid;
+    QWidget *m_results;
     EmptyState *m_empty;
     int m_generation = 0;
 };

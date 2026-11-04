@@ -40,6 +40,8 @@ private:
     void showContextMenu(const QPoint &position);
     void openExternalClient();
     QString selectedHash() const;
+    QStringList selectedHashes() const;
+    void control(const QString &action);
 
     LocalLibrary *m_library;
     AppConfig *m_config;

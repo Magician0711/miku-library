@@ -20,6 +20,7 @@ struct AppConfig {
     DownloaderSettings downloader;
     QString theme = QStringLiteral("dark");     // legacy key, kept for older builds
     QString appearance = QStringLiteral("system"); // system | light | dark
+    int disclaimerAccepted = 0;                    // accepted declaration version, 0 = never
     QString language = QStringLiteral("zh-CN");
     bool hasSavedDownloadDirectory = false;
 

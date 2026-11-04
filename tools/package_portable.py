@@ -116,7 +116,8 @@ for item in manifest['files']:
 profile=VERIFY/'全新 用户配置'
 state=profile/'.anime-nexus';state.mkdir(parents=True)
 downloads=profile/'Downloads';downloads.mkdir()
-config={'engine':{'save_path':str(downloads),'bind_address':'127.0.0.1','listen_port':0,'dht':False,'lsd':False,'upnp':False},'paths':{'download_dir':str(downloads)}}
+# The first-run guide is modal; accept it so startup reaches the main window.
+config={'disclaimer_accepted':1,'engine':{'save_path':str(downloads),'bind_address':'127.0.0.1','listen_port':0,'dht':False,'lsd':False,'upnp':False},'paths':{'download_dir':str(downloads)}}
 write(state/'config.json',json.dumps(config,ensure_ascii=False))
 env=os.environ.copy()
 for key in list(env):

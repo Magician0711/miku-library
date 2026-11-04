@@ -54,6 +54,24 @@ int main(int argc,char **argv) {
     check(page.findChild<QCheckBox*>("PublicTrackerFallback")->isChecked(),"public tracker fallback is visible and enabled by default");
     auto limited=config.engine;limited.publicTrackerFallback=false;limited.fallbackTrackers={"http://127.0.0.1:1234/announce"};
     const auto reload=EngineSettings::fromJson(limited.toJson());check(!reload.publicTrackerFallback&&reload.fallbackTrackers==limited.fallbackTrackers,"public discovery preference and tracker list survive serialization");
+    {
+        // The apply bar exists only while something would actually change.
+        auto *bar=page.findChild<QWidget*>("SaveBar");
+        auto wait=[](int ms){QEventLoop loop;QTimer::singleShot(ms,&loop,&QEventLoop::quit);loop.exec();};
+        page.editDownloader("builtin");wait(350);
+        check(bar&&!bar->isVisible(),"no apply bar without changes");
+        type->setCurrentIndex(type->findData("aria2"));type->setCurrentIndex(type->findData("builtin"));wait(350);
+        check(!bar->isVisible(),"browsing downloader types alone is not a change");
+        auto *limit=page.findChild<QSpinBox*>("ConnectionLimit");const int saved=limit->value();
+        limit->setValue(saved+321);wait(350);
+        check(bar->isVisible(),"apply bar appears after a real change");
+        limit->setValue(saved);wait(350);
+        check(!bar->isVisible(),"changing a value back hides the apply bar");
+        limit->setValue(saved+77);wait(350);
+        for(auto *b:bar->findChildren<QPushButton*>())if(b->text()==QStringLiteral("放弃更改"))b->click();
+        wait(350);
+        check(!bar->isVisible()&&limit->value()==saved,"discarding restores the value and hides the apply bar");
+    }
     check(!engine.running(),"settings checks do not start network or touch real tasks");
     return failures?1:0;
 }

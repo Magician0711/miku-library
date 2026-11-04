@@ -23,4 +23,14 @@ QString openJson(QWidget *parent, const QString &title);
 QString saveJson(QWidget *parent, const QString &title, const QString &fileName);
 QString replaceDownloadDirectory(QWidget *parent, const QString &path, const QString &reason);
 QString chooseVideo(QWidget *parent,const QStringList &paths);
+// Version of the usage declaration; bump it when the wording changes materially
+// so every user is asked to accept the new text once.
+constexpr int kDisclaimerVersion = 1;
+QStringList disclaimerItems();
+// Short notes shown on the welcome page and in Settings → About.
+QString playerNote();
+QString freeSoftwareNote();
+// First launch: quick start plus the declaration, returns false if declined.
+// With review set it only shows the declaration for re-reading.
+bool firstRunGuide(QWidget *parent, bool review = false);
 }

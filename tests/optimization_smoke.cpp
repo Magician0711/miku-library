@@ -4,6 +4,7 @@
 #include "core/InstanceGuard.h"
 #include "net/HttpClient.h"
 #include "net/BangumiClient.h"
+#include "net/FeedParser.h"
 #include "net/SearchAggregator.h"
 #include <QTemporaryDir>
 #include <QFile>
@@ -63,5 +64,17 @@ int main(int argc,char **argv){
     InstanceGuard guard(dir.filePath("instance"));check(guard.acquire({"primary"})==InstanceGuard::Primary,"first instance owns data lock");
     QStringList forwarded;guard.onArguments=[&](QStringList args){forwarded=args;};QProcess secondary;secondary.start(app.applicationFilePath(),{"--secondary",dir.filePath("instance"),"--search",QStringLiteral("中文 查询")});
     check(spinUntil([&]{return secondary.state()==QProcess::NotRunning;})&&secondary.exitCode()==0&&forwarded.contains(QStringLiteral("中文 查询")),"secondary process forwards Unicode arguments without second writer");
+    {
+        SiteEntry site;site.id="nyaa";site.name="Nyaa";
+        const QByteArray feed=R"(<rss><channel><item><title>[Group] Show - 01 [1080p]</title><link>https://example.com/1.torrent</link><enclosure url="https://example.com/1.torrent" length="1" type="application/x-bittorrent"/></item></channel></rss>)";
+        const auto rows=parseRss(feed,site);
+        check(rows.size()==1&&rows.first().fileSize==0,"placeholder enclosure length is treated as unknown size");
+        ResourceResult target=rows.value(0),incoming=target;incoming.fileSize=700LL*1024*1024;mergeResource(target,incoming);
+        check(target.fileSize==incoming.fileSize,"merge fills unknown size from another source");
+        target.fileSize=1;mergeResource(target,incoming);
+        check(target.fileSize==incoming.fileSize,"merge replaces placeholder 1 B size");
+        incoming.fileSize=2048;mergeResource(target,incoming);
+        check(target.fileSize==700LL*1024*1024,"merge keeps a real size over a smaller one");
+    }
     return failed?1:0;
 }
