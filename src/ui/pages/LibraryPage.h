@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "core/Models.h"
@@ -14,6 +17,7 @@ class CardGrid;
 class EmptyState;
 class QButtonGroup;
 class QLabel;
+class QPushButton;
 class QTimer;
 
 class LibraryPage : public QWidget {
@@ -21,8 +25,12 @@ class LibraryPage : public QWidget {
 public:
     LibraryPage(Database *db, BangumiClient *bangumi, ImageLoader *images, LocalLibrary *library, QWidget *parent = nullptr);
 
+    // Reflects a running update check on the 检查追更 button; result is shown once done.
+    void setUpdateCheck(bool running, const QString &result = {});
+
 signals:
     void animeSelected(AnimeSubject subject);
+    void checkUpdatesRequested();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -39,6 +47,7 @@ private:
     EmptyState *m_empty;
     QLabel *m_count;
     QButtonGroup *m_scope;
+    QPushButton *m_checkUpdates;
     QTimer *m_refreshTimer;
     QSet<int> m_fetching;
 };

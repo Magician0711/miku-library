@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "net/TorrentEngine.h"
 #include "net/AnimeDownloads.h"
 #include "core/LocalLibrary.h"
@@ -333,6 +336,45 @@ int main(int argc, char **argv)
     check(persisted.localReleases(42).size()==2&&persisted.subjects().size()==1&&downloadErrors.isEmpty(),
         "completed local collection and playback records survive reload");
     for(const auto &message:downloadErrors){report.write(message.toUtf8()+"\n");report.flush();}
+    {
+        // Changing the download folder: engine tasks move inside libtorrent, a record
+        // without a task moves its files directly, and every stored path follows.
+        auto clean=[](const QString &path){return QDir::cleanPath(QDir::fromNativeSeparators(path));};
+        const QString oldRoot=config.engine.savePath,newRoot=sandbox.path()+"/moved";
+        LibraryItem leftover;leftover.key="leftover";leftover.subject=subject;leftover.subject.bangumiId=43;
+        leftover.resource.title="[Group B] Leftover - 01";leftover.savePath=oldRoot+"/Leftover/Group B/Season 1";
+        QDir().mkpath(leftover.savePath);const QString leftoverFile=leftover.savePath+"/Leftover - 01.mkv";
+        {QFile f(leftoverFile);f.open(QIODevice::WriteOnly);f.write(payload);}
+        leftover.files={{leftoverFile,qint64(payload.size()),true}};leftover.phase="complete";leftover.complete=true;
+        check(library.put(leftover),"record without a task is stored");
+        const auto plan=downloads.planMove(oldRoot);
+        check(plan.items==3&&plan.anime==2&&plan.external==0,"folder change counts the tasks and records under the old folder");
+        int moved=-1;QStringList moveErrors;
+        QObject::connect(&downloads,&AnimeDownloads::moveFinished,&app,[&](int n,const QStringList &e){moved=n;moveErrors=e;});
+        downloads.moveDownloads(oldRoot,newRoot);
+        check(waitUntil([&]{return moved>=0;})&&moveErrors.isEmpty()&&moved==3,"folder change moves everything and reports once");
+        for(const auto &message:moveErrors){report.write(message.toUtf8()+"\n");report.flush();}
+        const QString newAutomatic=library.downloadDirectory(newRoot,subject,"Group A",1);
+        check(readFile(newAutomatic+"/"+fileName)==payload&&!QFile::exists(automatic+"/"+fileName),"engine task data moves with its task");
+        check(readFile(newRoot+"/Leftover/Group B/Season 1/Leftover - 01.mkv")==payload&&!QFile::exists(leftoverFile),"finished files without a task are moved");
+        bool pathsMoved=true;
+        for(const auto &item:library.items()) {
+            pathsMoved=pathsMoved&&clean(item.savePath).startsWith(newRoot);
+            for(const auto &file:item.files)pathsMoved=pathsMoved&&clean(file.path).startsWith(newRoot);
+        }
+        check(pathsMoved,"library records point at the new folder");
+        bool tasksMoved=engine.listTorrents().size()==2;
+        for(const auto &task:engine.listTorrents())tasksMoved=tasksMoved&&clean(task.savePath).startsWith(newRoot);
+        const auto state=QJsonDocument::fromJson(readFile(stateDir+"/state.json")).array();
+        bool torrentsMoved=state.size()==2;
+        for(const auto &entry:state) {
+            const QString uri=entry.toObject()["uri"].toString();
+            torrentsMoved=torrentsMoved&&clean(uri).startsWith(newRoot)&&QFile::exists(uri);
+        }
+        check(tasksMoved&&torrentsMoved,"engine tasks and their saved torrents now live in the new folder");
+        check(!QDir(oldRoot+"/Leftover").exists(),"folders emptied by the move are removed");
+        check(waitUntil([&]{downloads.synchronize();return library.localReleases(42).size()==2;}),"moved videos stay playable");
+    }
     engine.remove(hash);engine.remove(batchHash);waitUntil([&]{return engine.listTorrents().isEmpty();});
 
     {

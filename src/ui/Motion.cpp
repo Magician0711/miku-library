@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "Motion.h"
 #include "Theme.h"
 
@@ -107,13 +110,13 @@ SnapshotFade::SnapshotFade(QWidget *target, int ms)
     m_before = grabArea(target);
     if (m_trace) m_trace->grabMs = m_trace->clock.elapsed();
     for (auto *older : parentWidget()->findChildren<SnapshotFade *>(Qt::FindDirectChildrenOnly))
-        if (older != this && older->m_target == target) older->deleteLater();
+        if (older != this && older->m_target == target) { older->hide(); older->deleteLater(); }
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setAttribute(Qt::WA_OpaquePaintEvent);
     setFocusPolicy(Qt::NoFocus);
     setGeometry(parentWidget() == target ? target->rect() : target->geometry());
     target->installEventFilter(this);
-    connect(target, &QObject::destroyed, this, &QObject::deleteLater);
+    connect(target, &QObject::destroyed, this, &SnapshotFade::finish);
     raise();
     show();
 
@@ -133,7 +136,7 @@ SnapshotFade::SnapshotFade(QWidget *target, int ms)
         m_opacity = value.toReal();
         update();
     });
-    connect(animation, &QVariantAnimation::finished, this, &QObject::deleteLater);
+    connect(animation, &QVariantAnimation::finished, this, &SnapshotFade::finish);
 }
 
 SnapshotFade::~SnapshotFade()
@@ -143,6 +146,14 @@ SnapshotFade::~SnapshotFade()
         .arg(m_trace->name).arg(m_trace->grabMs).arg(m_trace->startedAt).arg(m_trace->frames)
         .arg(m_trace->startedAt < 0 ? 0 : m_trace->clock.elapsed() - m_trace->startedAt).arg(m_trace->worst);
     delete m_trace;
+}
+
+void SnapshotFade::finish()
+{
+    // Hidden at once: deletion is deferred to the event loop, and a finished layer
+    // must not keep covering live content until then.
+    hide();
+    deleteLater();
 }
 
 void SnapshotFade::begin()
@@ -163,7 +174,7 @@ bool SnapshotFade::eventFilter(QObject *object, QEvent *event)
 {
     // The stills no longer match a moved, resized or hidden target; finish at once.
     if (object == m_target && (event->type() == QEvent::Resize || event->type() == QEvent::Move
-                               || event->type() == QEvent::Hide)) { hide(); deleteLater(); }
+                               || event->type() == QEvent::Hide)) finish();
     return QWidget::eventFilter(object, event);
 }
 

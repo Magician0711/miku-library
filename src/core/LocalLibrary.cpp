@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "LocalLibrary.h"
 #include "TitleParser.h"
 
@@ -59,7 +62,7 @@ bool LocalLibrary::load(QString *error)
         const auto o=value.toObject();
         DownloadPreference p;p.group=o.value("group").toString();p.resolution=o.value("resolution").toString();
         p.language=o.value("language").toString();p.subtitleType=o.value("subtitle_type").toString();
-        p.ignoredThrough=o.value("ignored_through").toInt();
+        p.ignoredThrough=o.value("ignored_through").toInt();p.follow=o.value("follow").toBool(true);
         if(o.value("subject_id").toInt()>0)m_preferences.insert(o.value("subject_id").toInt(),p);
     }
     for(const auto &value:document.object().value("downloads").toArray()) {
@@ -139,7 +142,7 @@ bool LocalLibrary::save(QString *error) const
     QJsonArray preferences;
     for(auto it=m_preferences.cbegin();it!=m_preferences.cend();++it)
         preferences.append(QJsonObject{{"subject_id",it.key()},{"group",it->group},{"resolution",it->resolution},
-            {"language",it->language},{"subtitle_type",it->subtitleType},{"ignored_through",it->ignoredThrough}});
+            {"language",it->language},{"subtitle_type",it->subtitleType},{"ignored_through",it->ignoredThrough},{"follow",it->follow}});
     QSaveFile file(m_path);
     const auto data=QJsonDocument(QJsonObject{{"schema_version",1},{"downloads",entries},{"preferences",preferences}}).toJson();
     if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit()) {
@@ -271,7 +274,7 @@ QVector<UpdateTarget> LocalLibrary::updateTargets() const
         if(seen.contains(id))continue;
         seen.insert(id);
         UpdateTarget target;target.preference=preference(id);
-        if(target.preference.group.isEmpty())continue;
+        if(target.preference.group.isEmpty()||!target.preference.follow)continue;
         const QString key=releaseGroupKey(target.preference.group);
         // Follow the newest season this group was downloaded in.
         target.season=0;

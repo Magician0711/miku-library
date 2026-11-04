@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "HttpFixture.h"
 #include "core/Catalog.h"
 #include "core/Grouping.h"
@@ -5,6 +8,7 @@
 #include "net/HttpClient.h"
 #include "net/BangumiClient.h"
 #include "net/FeedParser.h"
+#include "net/AppUpdate.h"
 #include "net/SearchAggregator.h"
 #include <QTemporaryDir>
 #include <QFile>
@@ -76,5 +80,9 @@ int main(int argc,char **argv){
         incoming.fileSize=2048;mergeResource(target,incoming);
         check(target.fileSize==700LL*1024*1024,"merge keeps a real size over a smaller one");
     }
+    check(AppUpdate::versionFromTag("v0.7.0-20261104")==QVersionNumber(0,7,0)&&AppUpdate::versionFromTag("0.6.1")==QVersionNumber(0,6,1)
+          &&AppUpdate::versionFromTag("v1.2")==QVersionNumber(1,2),"release tags yield their version number");
+    check(AppUpdate::versionFromTag("nightly").isNull()&&AppUpdate::versionFromTag("v2026").isNull()&&AppUpdate::versionFromTag("").isNull(),
+          "tags without a version are ignored");
     return failed?1:0;
 }

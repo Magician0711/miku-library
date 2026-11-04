@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include <QString>
@@ -17,6 +20,9 @@ void hideTooltip();
 void message(QWidget *parent, const QString &title, const QString &text,
              Notice notice = Notice::Information);
 Removal confirmRemoval(QWidget *parent);
+// A yes / no question on the themed surface; true when the accept button is used.
+bool ask(QWidget *parent, const QString &title, const QString &text,
+         const QString &acceptText, const QString &rejectText);
 QString chooseDirectory(QWidget *parent, const QString &title, const QString &path);
 QString openExecutable(QWidget *parent,const QString &path);
 QString openJson(QWidget *parent, const QString &title);

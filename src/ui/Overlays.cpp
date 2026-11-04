@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "Overlays.h"
 #include "Theme.h"
 #include "Motion.h"
@@ -340,6 +343,20 @@ Removal confirmRemoval(QWidget *parent)
     QObject::connect(remove,&QPushButton::clicked,&dialog,[&]{choice=Removal::DeleteFiles;dialog.accept();});
     buttons->addWidget(cancel);buttons->addStretch();buttons->addWidget(remove);buttons->addWidget(keep);dialog.content->addLayout(buttons);
     dialog.adjustSize();dialog.exec();return choice;
+}
+
+bool ask(QWidget *parent,const QString &title,const QString &text,const QString &acceptText,const QString &rejectText)
+{
+    DialogSurface dialog(parent,title);dialog.setFixedWidth(520);
+    dialog.content->addWidget(bodyText(text,&dialog));
+    auto *buttons=new QHBoxLayout;buttons->setSpacing(8);
+    auto *reject=new QPushButton(rejectText,&dialog);
+    auto *accept=new QPushButton(acceptText,&dialog);accept->setObjectName("Primary");accept->setDefault(true);
+    QObject::connect(reject,&QPushButton::clicked,&dialog,&QDialog::reject);
+    QObject::connect(accept,&QPushButton::clicked,&dialog,&QDialog::accept);
+    buttons->addStretch();buttons->addWidget(reject);buttons->addWidget(accept);dialog.content->addLayout(buttons);
+    dialog.adjustSize();
+    return dialog.exec()==QDialog::Accepted;
 }
 
 QString chooseDirectory(QWidget *parent,const QString &title,const QString &path)

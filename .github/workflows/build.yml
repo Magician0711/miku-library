@@ -1,0 +1,79 @@
+# Builds Anime Nexus on Windows and runs the smoke tests on every push.
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          cache: true
+
+      # libtorrent with Boost and OpenSSL takes a long time to build; keep the binaries.
+      - name: Restore vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-libtorrent-x64-windows-${{ env.ImageVersion }}
+          restore-keys: vcpkg-libtorrent-x64-windows-
+
+      - name: Install libtorrent
+        run: |
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Smoke tests
+        working-directory: build
+        run: |
+          $env:PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin;$env:PATH"
+          $tests = "ControlsSmoke","DetailLibrarySmoke","DirectorySmoke","DownloadSmoke","ExternalDownloaderSmoke",
+                   "LocalLibrarySmoke","OptimizationSmoke","RpcSmoke","SearchInputSmoke","SettingsLimitsSmoke",
+                   "UiAuditSmoke","WindowSmoke"
+          $failed = @()
+          foreach ($test in $tests) {
+            $start = Get-Date
+            $process = Start-Process ".\$test.exe" -ArgumentList "--test" -PassThru -NoNewWindow
+            $null = $process.Handle   # keeps the exit code readable after the process ends
+            if (-not $process.WaitForExit(600000)) { $process.Kill(); $failed += "$test (timeout)"; continue }
+            $log = Get-ChildItem *.log | Where-Object LastWriteTime -ge $start | Sort-Object LastWriteTime | Select-Object -Last 1
+            $passed = if ($log) { (Select-String -Path $log.FullName -Pattern ' PASS$').Count } else { 0 }
+            Write-Host "$test exit=$($process.ExitCode) passed=$passed"
+            if ($process.ExitCode -ne 0) {
+              $failed += $test
+              if ($log) { Select-String -Path $log.FullName -Pattern ' FAIL$' | ForEach-Object { Write-Host "  $($_.Line)" } }
+            }
+          }
+          if ($failed) { Write-Error "Failed: $($failed -join ', ')"; exit 1 }
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: build/*.log

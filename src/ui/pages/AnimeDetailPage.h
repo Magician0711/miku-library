@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "core/Grouping.h"
@@ -54,6 +57,7 @@ private:
     struct RowState { bool ready = false; bool active = false; bool external = false; };
     void buildHero(QVBoxLayout *layout);
     QWidget *buildResourceRow(const Release &release, const RowState &state, QWidget *parent);
+    void updateUpdatesButton();
     void updateFollowButton(bool following);
     void buildFilters(QVBoxLayout *layout);
     void buildSourceStrip(QVBoxLayout *layout);
@@ -108,6 +112,7 @@ private:
     FlowLayout *m_tagsLayout;
     QPushButton *m_followButton;
     QPushButton *m_moreButton;
+    QPushButton *m_updatesButton;
     QWidget *m_dotsBox;
     FlowLayout *m_dotsLayout;
     QWidget *m_groupsBox;

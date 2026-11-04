@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "EngineSettings.h"
@@ -21,6 +24,7 @@ struct AppConfig {
     QString theme = QStringLiteral("dark");     // legacy key, kept for older builds
     QString appearance = QStringLiteral("system"); // system | light | dark
     int disclaimerAccepted = 0;                    // accepted declaration version, 0 = never
+    bool checkAppUpdates = true;                   // look for a newer release at startup
     QString language = QStringLiteral("zh-CN");
     bool hasSavedDownloadDirectory = false;
 

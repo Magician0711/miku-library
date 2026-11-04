@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "core/Models.h"
@@ -31,6 +34,7 @@ class QTimer;
 class QToolButton;
 class StatusDot;
 class UpdateChecker;
+class AppUpdate;
 class UpdatePanel;
 
 class MainWindow : public FramelessWindow {
@@ -56,6 +60,8 @@ private:
     void selectPage(int index);
     // Sidebar status: downloader name, live transfer speeds and the active-task badge.
     void updateStatus();
+    // Runs the followed-group update check; manual runs report their result.
+    void checkForNewEpisodes(bool manual);
     void setAppearance(Theme::Mode mode);
     void updateThemeButton();
     void showDownloaderMenu(QWidget *anchor);
@@ -80,8 +86,11 @@ private:
     QLabel *m_downloadBadge;
     QTimer *m_badgeTimer;
     QToolButton *m_themeButton;
+    QPushButton *m_newVersion = nullptr;
+    AppUpdate *m_appUpdate = nullptr;
     UpdatePanel *m_updatePanel = nullptr;
     UpdateChecker *m_updateChecker = nullptr;
+    bool m_manualCheck = false;
 
     HomePage *m_home;
     SearchPage *m_search;

@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "MainWindow.h"
 
 #include "core/AppConfig.h"
@@ -14,6 +17,7 @@
 #include "ui/Motion.h"
 #include "ui/UpdatePanel.h"
 #include "net/UpdateChecker.h"
+#include "net/AppUpdate.h"
 #include "ui/pages/AnimeDetailPage.h"
 #include "ui/pages/DownloadsPage.h"
 #include "ui/pages/HomePage.h"
@@ -90,14 +94,27 @@ MainWindow::MainWindow(Catalog *catalog, Database *db, AppConfig *config, HttpCl
     QTimer::singleShot(0,this,[this]{m_animeDownloads->adoptCachedSubjects(m_db->cachedSubjects());});
     updateStatus();
     // Check followed release groups once per launch, after the first screen has settled.
-    QTimer::singleShot(10000,this,[this] {
+    QTimer::singleShot(10000,this,[this]{checkForNewEpisodes(false);});
+}
+
+void MainWindow::checkForNewEpisodes(bool manual)
+{
+    if(!m_updateChecker) {
         m_updateChecker=new UpdateChecker(m_catalog,m_http,m_bangumi,m_localLibrary,this);
         connect(m_updateChecker,&UpdateChecker::found,m_updatePanel,&UpdatePanel::addNotice);
-        connect(m_updateChecker,&UpdateChecker::finished,this,[](int checked,int withUpdates){
+        connect(m_updateChecker,&UpdateChecker::finished,this,[this](int checked,int withUpdates) {
             qInfo().noquote()<<QStringLiteral("update check: %1 anime checked, %2 with new episodes").arg(checked).arg(withUpdates);
+            if(!std::exchange(m_manualCheck,false))return;
+            m_library->setUpdateCheck(false,
+                checked==0 ? QStringLiteral("还没有可追更的番剧：先用某个字幕组下载一集，之后就会检查它的新集。")
+                : withUpdates==0 ? QStringLiteral("已检查 %1 部番剧，暂无新集。").arg(checked)
+                : QStringLiteral("%1 部番剧有新集，见右下角。").arg(withUpdates));
         });
-        m_updateChecker->start();
-    });
+    }
+    // A manual click during the startup run just waits for that run to report.
+    m_manualCheck=m_manualCheck||manual;
+    if(manual)m_library->setUpdateCheck(true);
+    if(!m_updateChecker->running())m_updateChecker->start();
 }
 
 namespace {
@@ -203,6 +220,7 @@ void MainWindow::buildUi()
     connect(m_search,&SearchPage::animeSelected,this,[this](const AnimeSubject &s){openAnime(s);}); m_stack->addWidget(m_search);
     m_library=new LibraryPage(m_db,m_bangumi,m_images,m_localLibrary);
     connect(m_library,&LibraryPage::animeSelected,this,[this](const AnimeSubject &s){openAnime(s,true);}); m_stack->addWidget(m_library);
+    connect(m_library,&LibraryPage::checkUpdatesRequested,this,[this]{checkForNewEpisodes(true);});
     m_downloads=new DownloadsPage(m_engine,m_localLibrary,m_config); m_stack->addWidget(m_downloads);
     m_downloads->setRpc(m_animeDownloads->rpc());
     connect(m_downloads,&DownloadsPage::openDirectoryRequested,this,[this] {
@@ -213,6 +231,26 @@ void MainWindow::buildUi()
     connect(m_sites,&SitesPage::exportRequested,this,&MainWindow::exportCatalog);
     m_settings=new SettingsPage(m_engine,m_config); m_stack->addWidget(m_settings);
     connect(m_settings,&SettingsPage::downloaderChanged,this,&MainWindow::updateDownloader);
+    connect(m_settings,&SettingsPage::downloadFolderChanged,this,[this](const QString &from,const QString &to) {
+        const auto plan=m_animeDownloads->planMove(from);
+        if(plan.items==0)return;
+        QString text=(plan.anime>0 ? QStringLiteral("原下载目录中还有 %1 部番剧的 %2 个下载").arg(plan.anime).arg(plan.items)
+                                   : QStringLiteral("原下载目录中还有 %1 个下载").arg(plan.items))
+            +QStringLiteral("。要一起移到新目录吗？正在下载的任务会在新位置继续。");
+        if(plan.external>0)
+            text+=QStringLiteral("\n\n另有 %1 个由外部下载器处理的任务不会移动，请在对应软件中自行处理。").arg(plan.external);
+        if(Ui::ask(this,QStringLiteral("移动已下载的番剧？"),text,QStringLiteral("一起移动"),QStringLiteral("留在原处")))
+            m_animeDownloads->moveDownloads(from,to);
+    });
+    connect(m_animeDownloads,&AnimeDownloads::moveFinished,this,[this](int moved,const QStringList &errors) {
+        if(errors.isEmpty()) {
+            Ui::message(this,QStringLiteral("移动完成"),QStringLiteral("已把 %1 个下载移到新目录。").arg(moved));
+            return;
+        }
+        Ui::message(this,QStringLiteral("部分内容未能移动"),
+            QStringLiteral("已移动 %1 个下载，以下内容仍在原目录：\n%2").arg(moved).arg(errors.mid(0,8).join(QLatin1Char('\n'))),
+            Ui::Notice::Warning);
+    });
     connect(m_downloads,&DownloadsPage::switchDownloaderRequested,this,[this](QWidget *anchor){showDownloaderMenu(anchor);});
 
     // Appearance: quick switch in the title bar, mirrored in 偏好设置 → 外观.
@@ -226,6 +264,21 @@ void MainWindow::buildUi()
         connect(action,&QAction::triggered,this,[this,mode]{setAppearance(mode);});
     }
     m_themeButton->setMenu(themeMenu);
+    // Appears only when GitHub has a newer release; opens its page.
+    m_newVersion=new QPushButton(titleBar()); m_newVersion->setObjectName("NewVersion");
+    m_newVersion->setCursor(Qt::PointingHandCursor); m_newVersion->hide();
+    addTitleWidget(m_newVersion);
+    m_appUpdate=new AppUpdate(m_http,this);
+    connect(m_appUpdate,&AppUpdate::available,this,[this](const QString &version,const QUrl &page) {
+        m_newVersion->setText(QStringLiteral("新版本 %1").arg(version));
+        m_newVersion->setToolTip(QStringLiteral("打开下载页面"));
+        m_newVersion->setProperty("page",page);
+        m_newVersion->show();
+    });
+    connect(m_newVersion,&QPushButton::clicked,this,[this]{QDesktopServices::openUrl(m_newVersion->property("page").toUrl());});
+    connect(m_appUpdate,&AppUpdate::checked,m_settings,&SettingsPage::setAppUpdateStatus);
+    connect(m_settings,&SettingsPage::checkAppUpdateRequested,m_appUpdate,&AppUpdate::check);
+    if(m_config->checkAppUpdates)QTimer::singleShot(15000,m_appUpdate,&AppUpdate::check);
     addTitleWidget(m_themeButton);
     connect(Theme::notifier(),&Theme::Notifier::changed,this,&MainWindow::updateThemeButton);
     connect(m_settings,&SettingsPage::appearanceRequested,this,&MainWindow::setAppearance);

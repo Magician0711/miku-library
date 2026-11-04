@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include <QWidget>
@@ -14,14 +17,20 @@ class QComboBox;
 class QLabel;
 class QTabWidget;
 class QButtonGroup;
+class QPushButton;
 
 class SettingsPage : public QWidget {
     Q_OBJECT
 public:
     SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *parent = nullptr);
     void editDownloader(const QString &type={});
+    // Outcome of a new-version check, shown on the About tab.
+    void setAppUpdateStatus(const QString &status);
 signals:
     void downloaderChanged();
+    // The download folder was changed and saved; existing downloads are still in from.
+    void downloadFolderChanged(const QString &from, const QString &to);
+    void checkAppUpdateRequested();
     // Appearance applies immediately; the main window saves it.
     void appearanceRequested(Theme::Mode mode);
 
@@ -42,6 +51,9 @@ private:
     QTabWidget *m_tabs;
     QWidget *m_saveBar = nullptr;
     QLabel *m_cacheSize = nullptr;
+    QCheckBox *m_autoAppUpdate = nullptr;
+    QLabel *m_appUpdateStatus = nullptr;
+    QPushButton *m_checkAppUpdate = nullptr;
     bool m_dirty = false;
     bool m_loading = false;   // form is being refilled from the saved settings
     QButtonGroup *m_appearance;

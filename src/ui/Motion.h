@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include <QList>
@@ -56,6 +59,7 @@ protected:
 
 private:
     void begin();
+    void finish();
     QPointer<QWidget> m_target;
     QPixmap m_before;
     QPixmap m_after;

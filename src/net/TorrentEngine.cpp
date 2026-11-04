@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "TorrentEngine.h"
 
 #include "core/AppConfig.h"
@@ -677,6 +680,19 @@ bool TorrentEngine::remove(const QString &infoHash, bool deleteFiles)
     return false;
 }
 
+bool TorrentEngine::moveStorage(const QString &infoHash,const QString &newPath,QString *error)
+{
+    if(!m_session){if(error)*error=QStringLiteral("下载引擎未运行。");return false;}
+    for(const auto &handle:m_session->get_torrents()) {
+        if(hashString(handle).compare(infoHash,Qt::CaseInsensitive)!=0)continue;
+        if(!QDir().mkpath(newPath)){if(error)*error=QStringLiteral("无法创建目录：%1").arg(newPath);return false;}
+        // dont_replace keeps any file already at the destination instead of overwriting it.
+        handle.move_storage(newPath.toStdString(),lt::move_flags_t::dont_replace);
+        return true;
+    }
+    if(error)*error=QStringLiteral("下载任务已不存在。");return false;
+}
+
 void TorrentEngine::appendEntry(const Entry &entry)
 {
     m_entries.erase(std::remove_if(m_entries.begin(), m_entries.end(),
@@ -796,6 +812,25 @@ void TorrentEngine::pollAlerts()
                     m_saveErrors.insert(hash,error);emit engineError(error);
                 }
             }
+            stateChanged=true;
+        } else if(const auto *moved=lt::alert_cast<lt::storage_moved_alert>(alert)) {
+            const QString hash=hashString(moved->handle);
+            const QString path=QString::fromUtf8(moved->storage_path());
+            for(auto &entry:m_entries) {
+                if(entry.infoHash.compare(hash,Qt::CaseInsensitive)!=0)continue;
+                // Restarts re-add the task from its saved .torrent; keep it beside the data.
+                const QFileInfo torrent(entry.uri);
+                if(torrent.isFile()&&QDir(torrent.absolutePath())==QDir(entry.savePath)) {
+                    const QString target=QDir(path).absoluteFilePath(torrent.fileName());
+                    if(!QFileInfo::exists(target)&&QFile::rename(torrent.absoluteFilePath(),target))entry.uri=target;
+                }
+                entry.savePath=path;
+            }
+            saveState();
+            emit storageMoved(hash,path,{});
+            stateChanged=true;
+        } else if(const auto *failed=lt::alert_cast<lt::storage_moved_failed_alert>(alert)) {
+            emit storageMoved(hashString(failed->handle),{},QString::fromStdString(failed->error.message()));
             stateChanged=true;
         } else if (const auto *finished=lt::alert_cast<lt::torrent_finished_alert>(alert)) {
             if(m_settings.stopOnCompletion)stopCompleted(finished->handle);

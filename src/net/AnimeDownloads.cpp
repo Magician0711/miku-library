@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "AnimeDownloads.h"
 #include "TorrentEngine.h"
 #include "ExternalDownloader.h"
@@ -6,7 +9,12 @@
 #include "core/TitleParser.h"
 
 #include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
+#include <QFutureWatcher>
 #include <QPointer>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QTimer>
 #include <QUrlQuery>
 #include <QRegularExpression>
@@ -38,6 +46,50 @@ QString phaseOf(const DownloadTask &task)
 }
 }
 
+namespace {
+QString cleanRoot(const QString &path) { return QDir::cleanPath(QDir::fromNativeSeparators(path)); }
+// Windows paths compare case-insensitively.
+bool isUnder(const QString &path,const QString &root)
+{
+    const QString p=cleanRoot(path),r=cleanRoot(root);
+    return !r.isEmpty()&&(p.compare(r,Qt::CaseInsensitive)==0||p.startsWith(r+QLatin1Char('/'),Qt::CaseInsensitive));
+}
+QString rebase(const QString &path,const QString &from,const QString &to)
+{
+    if(!isUnder(path,from))return path;
+    return cleanRoot(to)+cleanRoot(path).mid(cleanRoot(from).size());
+}
+void rebaseItem(LibraryItem &item,const QString &from,const QString &to)
+{
+    item.savePath=rebase(item.savePath,from,to);
+    item.torrentFile=rebase(item.torrentFile,from,to);
+    for(auto &file:item.files)file.path=rebase(file.path,from,to);
+}
+
+// Moves one finished record's files; on any failure puts back what already moved.
+QString moveRecordFiles(const LibraryItem &item,const QString &from,const QString &to)
+{
+    QStringList sources;
+    for(const auto &file:item.files)if(QFileInfo(file.path).isFile())sources<<file.path;
+    if(QFileInfo(item.torrentFile).isFile())sources<<item.torrentFile;
+    QVector<QPair<QString,QString>> done;
+    for(const auto &source:sources) {
+        const QString target=rebase(source,from,to);
+        QString problem;
+        if(QFileInfo::exists(target))problem=QStringLiteral("目标位置已有同名文件");
+        else if(!QDir().mkpath(QFileInfo(target).absolutePath()))problem=QStringLiteral("无法创建目录");
+        else if(!QFile::rename(source,target))problem=QStringLiteral("文件可能正被其他程序使用");
+        if(!problem.isEmpty()) {
+            for(const auto &[back,moved]:done)QFile::rename(moved,back);
+            return QStringLiteral("%1：%2").arg(QFileInfo(source).fileName(),problem);
+        }
+        done.append({source,target});
+    }
+    return {};
+}
+}
+
+
 AnimeDownloads::AnimeDownloads(TorrentEngine *engine,LocalLibrary *library,AppConfig *config,QObject *parent)
     :QObject(parent),m_engine(engine),m_library(library),m_config(config),m_timer(new QTimer(this)),m_syncTimer(new QTimer(this))
 {
@@ -47,6 +99,16 @@ AnimeDownloads::AnimeDownloads(TorrentEngine *engine,LocalLibrary *library,AppCo
     m_syncTimer->setSingleShot(true);m_syncTimer->setInterval(100);
     connect(m_syncTimer,&QTimer::timeout,this,&AnimeDownloads::synchronize);
     connect(engine,&TorrentEngine::torrentRemoved,library,&LocalLibrary::markRemoved);
+    connect(engine,&TorrentEngine::storageMoved,this,[this](const QString &hash,const QString &newPath,const QString &problem) {
+        const auto pending=m_pendingMoves.take(hash.toLower());
+        if(pending.first.isEmpty())return;   // not part of a folder change
+        if(!problem.isEmpty())m_moveErrors<<problem;
+        else for(auto item:m_library->items())if(item.hash.compare(hash,Qt::CaseInsensitive)==0) {
+            rebaseItem(item,pending.first,newPath);QString error;
+            if(m_library->put(item,&error))++m_moved;else m_moveErrors<<error;
+        }
+        finishMoveStep();
+    });
     connect(library,&LocalLibrary::storageError,this,&AnimeDownloads::error);
     m_timer->setInterval(1500);connect(m_timer,&QTimer::timeout,this,&AnimeDownloads::synchronize);m_timer->start();
     QTimer::singleShot(0,this,&AnimeDownloads::restorePending);
@@ -329,3 +391,71 @@ void AnimeDownloads::restorePending()
     }
     synchronize();processNext();
 }
+
+AnimeDownloads::MoveSummary AnimeDownloads::planMove(const QString &oldRoot) const
+{
+    MoveSummary summary;QSet<int> anime;
+    for(const auto &item:m_library->items()) {
+        if(!isUnder(item.savePath,oldRoot))continue;
+        if(item.downloader!=QStringLiteral("builtin")){++summary.external;continue;}
+        ++summary.items;anime.insert(item.subject.bangumiId);
+    }
+    for(const auto &task:m_engine->listTorrents())
+        if(isUnder(task.savePath,oldRoot)&&std::none_of(m_library->items().cbegin(),m_library->items().cend(),
+            [&](const LibraryItem &item){return item.hash.compare(task.infoHash,Qt::CaseInsensitive)==0;}))++summary.items;
+    summary.anime=anime.size();
+    return summary;
+}
+
+void AnimeDownloads::moveDownloads(const QString &oldRoot,const QString &newRoot)
+{
+    if(moving()||cleanRoot(oldRoot).isEmpty()||isUnder(newRoot,oldRoot))return;
+    m_moved=0;m_moveErrors.clear();m_moveRoot=oldRoot;
+    // Engine tasks move inside libtorrent, which also handles partly downloaded files.
+    for(const auto &task:m_engine->listTorrents()) {
+        if(!isUnder(task.savePath,oldRoot))continue;
+        const QString target=rebase(task.savePath,oldRoot,newRoot);QString problem;
+        if(m_engine->moveStorage(task.infoHash,target,&problem))m_pendingMoves.insert(task.infoHash.toLower(),{task.savePath,target});
+        else m_moveErrors<<QStringLiteral("%1：%2").arg(task.title,problem);
+    }
+    QVector<LibraryItem> records;
+    for(auto item:m_library->items()) {
+        if(!isUnder(item.savePath,oldRoot)||item.downloader!=QStringLiteral("builtin"))continue;
+        if(!item.hash.isEmpty()&&m_pendingMoves.contains(item.hash.toLower()))continue;   // updated when the engine reports
+        records.append(item);
+    }
+    if(!records.isEmpty()) {
+        ++m_fileMoves;
+        auto *watcher=new QFutureWatcher<QStringList>(this);
+        connect(watcher,&QFutureWatcher<QStringList>::finished,this,[this,watcher,records,oldRoot,newRoot] {
+            const QStringList problems=watcher->result();watcher->deleteLater();
+            for(int i=0;i<records.size();++i) {
+                if(!problems.at(i).isEmpty()){m_moveErrors<<problems.at(i);continue;}
+                auto item=records.at(i);rebaseItem(item,oldRoot,newRoot);QString error;
+                if(m_library->put(item,&error))++m_moved;else m_moveErrors<<error;
+            }
+            --m_fileMoves;finishMoveStep();
+        });
+        watcher->setFuture(QtConcurrent::run([records,oldRoot,newRoot] {
+            QStringList problems;
+            for(const auto &item:records)problems<<moveRecordFiles(item,oldRoot,newRoot);
+            return problems;
+        }));
+    }
+    finishMoveStep();
+}
+
+void AnimeDownloads::finishMoveStep()
+{
+    if(moving())return;
+    // Clear the empty folders left behind, deepest first; never the root itself.
+    if(!m_moveRoot.isEmpty()) {
+        QStringList folders;
+        for(QDirIterator it(m_moveRoot,QDir::Dirs|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);it.hasNext();)folders<<it.next();
+        std::sort(folders.begin(),folders.end(),[](const QString &a,const QString &b){return a.size()>b.size();});
+        for(const auto &folder:folders)QDir().rmdir(folder);
+    }
+    m_moveRoot.clear();
+    emit moveFinished(m_moved,m_moveErrors);
+}
+

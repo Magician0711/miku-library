@@ -1,3 +1,6 @@
+# Anime Nexus - Copyright (C) 2026 Magician0711
+# SPDX-License-Identifier: GPL-3.0-only
+
 from pathlib import Path
 import ast,datetime,hashlib,json,os,shutil,struct,subprocess,time,zipfile
 
@@ -33,7 +36,7 @@ for file in CRT.glob('*.dll'):copy(file,STAGE/file.name)
 write(STAGE/'qt.conf','[Paths]\nPrefix=.\nPlugins=.\n')
 
 # Include the matching source and notices, never the user's profile or history.
-for directory in ('src','tests','assets','config','tools'):
+for directory in ('src','tests','assets','config','tools','.github'):
     shutil.copytree(PROJECT/directory,STAGE/'Source'/directory)
 for name in ('CMakeLists.txt','build.bat','README.md','UI_REWRITE.md','LICENSE','.gitignore','.gitattributes'):
     copy(PROJECT/name,STAGE/'Source'/name)
@@ -94,8 +97,10 @@ assert digest(PROJECT/'build/AnimeNexus.exe')==digest(STAGE/'AnimeNexus.exe')
 for file in STAGE.rglob('*'):
     if file.is_file() and file.suffix.lower() in ('.cpp','.h','.md','.json','.txt','.bat'):
         content=file.read_text(encoding='utf-8-sig',errors='replace')
-        if os.environ.get('USERNAME') and os.environ['USERNAME'] in content:
-            raise RuntimeError('Personal identifier in package: '+str(file.relative_to(STAGE)))
+        # The copyright line names the author on purpose; look for profile paths instead.
+        user=os.environ.get('USERNAME')
+        if user and any(f'Users{sep}{user}'.lower() in content.lower() for sep in ('\\','/')):
+            raise RuntimeError('Personal path in package: '+str(file.relative_to(STAGE)))
 manifest={'name':NAME,'created':now.isoformat(),'platform':'Windows x64','files':[]}
 for file in sorted(STAGE.rglob('*')):
     if file.is_file():manifest['files'].append({'path':file.relative_to(STAGE).as_posix(),'bytes':file.stat().st_size,'sha256':digest(file)})

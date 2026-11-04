@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "Grouping.h"
@@ -39,6 +42,7 @@ struct DownloadPreference {
     QString language;         // subtitle language tag, "bilingual", or empty
     QString subtitleType;     // "internal", "hardcoded", ...; empty = any
     int ignoredThrough = 0;   // update notices up to this episode were dismissed
+    bool follow = true;       // include in the update check
     bool matches(const ResourceResult &resource) const;
 };
 

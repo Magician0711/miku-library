@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "UpdatePanel.h"
 
 #include "Motion.h"
@@ -78,6 +81,12 @@ UpdatePanel::UpdatePanel(QWidget *canvas)
 
 void UpdatePanel::addNotice(const UpdateNotice &notice)
 {
+    for (int i = 0; i < m_notices.size(); ++i) {
+        if (m_notices.at(i).second.target.subject.bangumiId != notice.target.subject.bangumiId) continue;
+        auto *old = m_notices.takeAt(i).first;
+        old->hide(); old->deleteLater();
+        break;
+    }
     auto *row = new QFrame(this);
     row->setObjectName("UpdateRow");
     auto *line = new QHBoxLayout(row); line->setContentsMargins(0, 8, 0, 8); line->setSpacing(8);

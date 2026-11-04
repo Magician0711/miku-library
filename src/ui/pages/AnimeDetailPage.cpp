@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "AnimeDetailPage.h"
 
 #include "core/Catalog.h"
@@ -402,6 +405,19 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
     });
     actions->addWidget(bangumiButton);
 
+    // Only shown once something was downloaded, since updates follow that group.
+    m_updatesButton = new QPushButton(QStringLiteral("追更提醒"), this);
+    m_updatesButton->setCheckable(true);
+    m_updatesButton->setCursor(Qt::PointingHandCursor);
+    connect(m_updatesButton, &QPushButton::toggled, this, [this](bool on) {
+        auto preference = m_library->preference(m_subject.bangumiId);
+        if (preference.follow == on) return;
+        preference.follow = on;
+        m_library->setPreference(m_subject.bangumiId, preference);
+        updateUpdatesButton();
+    });
+    actions->addWidget(m_updatesButton);
+
     m_moreButton = new QPushButton(QStringLiteral("展开简介"), this);
     m_moreButton->setObjectName(QStringLiteral("Ghost"));
     connect(m_moreButton, &QPushButton::clicked, this, [this] {
@@ -427,6 +443,21 @@ void AnimeDetailPage::buildHero(QVBoxLayout *layout)
 
     row->addLayout(col, 1);
     layout->addWidget(hero);
+}
+
+void AnimeDetailPage::updateUpdatesButton()
+{
+    const auto preference = m_library->preference(m_subject.bangumiId);
+    m_updatesButton->setVisible(!preference.group.isEmpty());
+    {
+        QSignalBlocker blocker(m_updatesButton);
+        m_updatesButton->setChecked(preference.follow);
+    }
+    m_updatesButton->setIcon(Theme::icon(preference.follow ? "check" : "minus",
+                                         preference.follow ? &Theme::Palette::accentText : &Theme::Palette::text3));
+    m_updatesButton->setToolTip(preference.follow
+        ? QStringLiteral("启动时检查「%1」的新集。点击关闭").arg(preference.group)
+        : QStringLiteral("已关闭追更提醒。点击后启动时检查「%1」的新集").arg(preference.group));
 }
 
 void AnimeDetailPage::updateFollowButton(bool following)
@@ -599,6 +630,7 @@ void AnimeDetailPage::updateHero()
         m_followButton->setChecked(following);
     }
     updateFollowButton(following);
+    updateUpdatesButton();
 
     m_poster->setPixmap(QPixmap());
     m_poster->setText(QStringLiteral("NEXUS"));
@@ -1021,7 +1053,11 @@ void AnimeDetailPage::rememberChoice(const QString &group, std::optional<std::ar
         return;
     auto preference = m_library->preference(m_subject.bangumiId);
     const bool sameGroup = releaseGroupKey(preference.group) == releaseGroupKey(group);
-    if (!sameGroup) preference = {};          // a new group starts with no filters or dismissals
+    if (!sameGroup) {                          // a new group starts with no filters or dismissals
+        const bool follow = preference.follow;
+        preference = {};
+        preference.follow = follow;
+    }
     preference.group = group;
     if (kind) {
         preference.language = (*kind)[0];
@@ -1029,6 +1065,7 @@ void AnimeDetailPage::rememberChoice(const QString &group, std::optional<std::ar
         preference.resolution = (*kind)[2];
     }
     m_library->setPreference(m_subject.bangumiId, preference);
+    updateUpdatesButton();
 }
 
 void AnimeDetailPage::clearGroups()

@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "Theme.h"
 #include "Overlays.h"
 #include "Motion.h"
@@ -252,6 +255,8 @@ QPushButton#Primary:focus { border-color:$accentInk$; }
 QPushButton#Primary:disabled { background:$primaryDisabled$; border-color:$primaryDisabled$; color:$primaryDisabledText$; }
 QPushButton#Primary:checked { background:$accentSoft$; border-color:$accentSoft2$; color:$accentText$; }
 QPushButton#Soft,QPushButton#GroupDownload { background:$accentSoft$; color:$accentText$; border:1px solid transparent; font-weight:600; }
+QPushButton#NewVersion { background:$accentSoft$; color:$accentText$; border:none; border-radius:13px; padding:3px 12px; min-height:20px; font-weight:600; margin-right:6px; }
+QPushButton#NewVersion:hover { background:$accentSoft2$; }
 QPushButton#Soft:hover,QPushButton#GroupDownload:hover { background:$accentSoft2$; }
 QPushButton#Soft:focus,QPushButton#GroupDownload:focus { border-color:$accentText$; }
 QPushButton#Soft:disabled,QPushButton#GroupDownload:disabled { background:$surface2$; color:$disabledText$; }

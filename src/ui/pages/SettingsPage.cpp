@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "SettingsPage.h"
 
 #include "core/AppConfig.h"
@@ -262,6 +265,25 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
         auto *note=label(text,"SettingHint",true,about);note->setTextInteractionFlags(Qt::TextSelectableByMouse);
         about->layout()->addWidget(note);
     }
+    auto *updates=settingsCard(col,QStringLiteral("检查新版本"));
+    m_autoAppUpdate=new ToggleSwitch;m_autoAppUpdate->setObjectName("AutoAppUpdate");
+    connect(m_autoAppUpdate,&QCheckBox::toggled,this,[this](bool on) {
+        if(m_loading||m_config->checkAppUpdates==on)return;
+        m_config->checkAppUpdates=on;
+        if(!m_config->save())Ui::message(this,QStringLiteral("保存失败"),QStringLiteral("无法保存设置，请检查配置文件写入权限。"),Ui::Notice::Error);
+    });
+    addSetting(updates,QStringLiteral("启动时检查"),QStringLiteral("只读取 GitHub 上最新发布的版本号，不会自动下载或安装。"),m_autoAppUpdate);
+    updates->layout()->addWidget(divider(updates));
+    m_checkAppUpdate=new QPushButton(Theme::icon("refresh"),QStringLiteral("立即检查"));
+    connect(m_checkAppUpdate,&QPushButton::clicked,this,[this] {
+        m_checkAppUpdate->setEnabled(false);
+        m_appUpdateStatus->setText(QStringLiteral("正在检查…"));
+        emit checkAppUpdateRequested();
+    });
+    m_appUpdateStatus=new QLabel(QStringLiteral("当前版本 %1").arg(QCoreApplication::applicationVersion()));
+    m_appUpdateStatus->setObjectName("SettingHint");
+    addSetting(updates,QStringLiteral("手动检查"),QString(),m_checkAppUpdate);
+    updates->layout()->addWidget(m_appUpdateStatus);
     auto *terms=settingsCard(col,QStringLiteral("使用声明"));
     const auto items=Ui::disclaimerItems();
     for(int i=0;i<items.size();++i) {
@@ -318,6 +340,13 @@ SettingsPage::SettingsPage(TorrentEngine *engine, AppConfig *config, QWidget *pa
     load();
 }
 
+void SettingsPage::setAppUpdateStatus(const QString &status)
+{
+    if(!m_appUpdateStatus)return;
+    m_appUpdateStatus->setText(QStringLiteral("当前版本 %1 · %2").arg(QCoreApplication::applicationVersion(),status));
+    m_checkAppUpdate->setEnabled(true);
+}
+
 void SettingsPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
@@ -336,6 +365,7 @@ void SettingsPage::updateCacheSize()
 void SettingsPage::load()
 {
     m_loading=true;
+    m_autoAppUpdate->setChecked(m_config->checkAppUpdates);
     m_downloaderDraft=m_config->downloader;m_editType.clear();
     {QSignalBlocker block(m_downloaderType);m_downloaderType->setCurrentIndex(qMax(0,m_downloaderType->findData(m_downloaderDraft.selected)));}
     updateDownloaderFields();
@@ -442,6 +472,7 @@ void SettingsPage::apply()
     if(!m_config->save()){*m_config=before;Ui::message(this,QStringLiteral("保存失败"),QStringLiteral("无法保存设置，请检查配置文件写入权限。"),Ui::Notice::Error);return;}
     emit downloaderChanged();
     m_engine->applySettings(settings);
+    if(QDir(before.engine.savePath)!=QDir(settings.savePath))emit downloadFolderChanged(before.engine.savePath,settings.savePath);
     m_status->setText(QStringLiteral("已应用 · %1").arg(m_engine->version()));
     updateDirty();
 }

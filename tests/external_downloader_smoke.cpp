@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "net/ExternalDownloader.h"
 #include "net/TorrentEngine.h"
 #include "net/AnimeDownloads.h"

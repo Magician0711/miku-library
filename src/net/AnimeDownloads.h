@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "core/LocalLibrary.h"
@@ -22,10 +25,19 @@ public:
     void adoptCachedSubjects(const QVector<AnimeSubject> &subjects);
     DownloaderRpc *rpc() const {return m_rpc;}
 
+    // Changing the download folder: what lives under the old one, and moving it.
+    struct MoveSummary { int anime=0; int items=0; int external=0; };
+    MoveSummary planMove(const QString &oldRoot) const;
+    // Built-in tasks move through the engine, finished files on a worker thread;
+    // external downloaders' tasks stay where they are. Reports via moveFinished.
+    void moveDownloads(const QString &oldRoot,const QString &newRoot);
+    bool moving() const {return !m_pendingMoves.isEmpty()||m_fileMoves>0;}
+
 signals:
     void queued();
     void information(const QString &message);
     void error(const QString &message);
+    void moveFinished(int moved,const QStringList &errors);
 
 private:
     bool reserve(const AnimeSubject &subject,const PlannedDownload &plan);
@@ -48,4 +60,10 @@ private:
     bool m_dispatching=false;
     QSet<QString> m_activeKeys;
     QStringList m_errors;
+    void finishMoveStep();
+    QHash<QString,QPair<QString,QString>> m_pendingMoves;   // hash -> old, new save path
+    int m_fileMoves=0;
+    int m_moved=0;
+    QStringList m_moveErrors;
+    QString m_moveRoot;
 };

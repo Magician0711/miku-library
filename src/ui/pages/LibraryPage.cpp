@@ -1,9 +1,13 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "LibraryPage.h"
 
 #include "core/Database.h"
 #include "core/LocalLibrary.h"
 #include "ui/ImageLoader.h"
 #include "ui/Motion.h"
+#include "ui/Overlays.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "net/BangumiClient.h"
@@ -46,6 +50,11 @@ LibraryPage::LibraryPage(Database *db, BangumiClient *bangumi, ImageLoader *imag
     }
     new Motion::SlidingIndicator(scopeBar,m_scope->buttons(),Motion::SlidingIndicator::Look::Outlined,8);
     connect(m_scope,&QButtonGroup::idClicked,this,[this]{Motion::crossfade(m_results);refresh();});
+    m_checkUpdates=new QPushButton(Theme::icon("refresh"),QStringLiteral("检查追更"),this);
+    m_checkUpdates->setToolTip(QStringLiteral("立即检查下载过的番剧在同一字幕组是否有新集"));
+    m_checkUpdates->setCursor(Qt::PointingHandCursor);
+    connect(m_checkUpdates,&QPushButton::clicked,this,&LibraryPage::checkUpdatesRequested);
+    header.actions->addWidget(m_checkUpdates);
     header.actions->addWidget(scopeBar);
     layout->addWidget(header.widget);
 
@@ -53,6 +62,14 @@ LibraryPage::LibraryPage(Database *db, BangumiClient *bangumi, ImageLoader *imag
     m_empty=new EmptyState("library",QStringLiteral("收藏室，等你添上第一部"),QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"),this);
     m_results=overlayStack(scrollArea(m_grid),m_empty,this);
     layout->addWidget(m_results,1);
+}
+
+void LibraryPage::setUpdateCheck(bool running,const QString &result)
+{
+    m_checkUpdates->setEnabled(!running);
+    m_checkUpdates->setText(running?QStringLiteral("检查中…"):QStringLiteral("检查追更"));
+    if(!running&&!result.isEmpty()&&m_checkUpdates->isVisible())
+        Ui::showTooltip(m_checkUpdates,result,m_checkUpdates->mapToGlobal(QPoint(0,m_checkUpdates->height()+6)));
 }
 
 void LibraryPage::showEvent(QShowEvent *event)

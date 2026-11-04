@@ -25,14 +25,14 @@ build.bat
 
 | 测试 | 覆盖 |
 |---|---|
-| `LocalLibrarySmoke` | 下载记录持久化、自动目录、重复预留、字幕组与季度隔离、画质去重、合集重叠、追更目标与新集计算 |
-| `DownloadSmoke` | 用本机 HTTP、Tracker 和自生成种子跑完整下载流程：完成即停、重启恢复、文件选择、补缺集 |
-| `OptimizationSmoke` | 站点持久化、全来源调度、分页、请求取消、别名匹配、单实例参数转交、占位文件大小 |
+| `LocalLibrarySmoke` | 下载记录持久化、自动目录、重复预留、字幕组与季度隔离、画质去重、合集重叠、追更目标、新集计算与追更开关 |
+| `DownloadSmoke` | 用本机 HTTP、Tracker 和自生成种子跑完整下载流程：完成即停、重启恢复、文件选择、补缺集、更换下载目录时移动文件 |
+| `OptimizationSmoke` | 站点持久化、全来源调度、分页、请求取消、别名匹配、单实例参数转交、占位文件大小、版本号解析 |
 | `RpcSmoke` | qBittorrent / Transmission / aria2 接口的认证、添加、进度、暂停、恢复、移除 |
 | `ExternalDownloaderSmoke` | 外部程序启动参数、种子落盘、重复提交、文件校验与路由 |
 | `DetailLibrarySmoke` | 字幕组排序与筛选、下载 / 播放切换、本地详情 |
 | `SettingsLimitsSmoke` | 设置项、下载器草稿、应用栏显示 |
-| `UiAuditSmoke --test` | 浮层、欢迎页、过渡动画、海报缓存 |
+| `UiAuditSmoke --test` | 浮层、欢迎页、追更提示窗口、过渡动画、海报缓存 |
 | `ControlsSmoke --test`、`WindowSmoke`、`DirectorySmoke`、`SearchInputSmoke` | 控件、窗口、下载目录与中文输入 |
 
 测试只使用临时目录和自生成数据，不访问真实影片内容。
@@ -64,7 +64,7 @@ src/
 
 ## 许可证
 
-项目以 [GPL-3.0](../LICENSE) 发布。提交的代码同样按 GPL-3.0 授权；引入新的第三方库前，请确认其许可与 GPL-3.0 兼容（MIT、BSD、Apache-2.0、LGPL 等均可），并把许可文本放进 `licenses/`。
+项目以 [GPL-3.0](../LICENSE) 发布，每个源文件开头带有 `SPDX-License-Identifier: GPL-3.0-only` 声明，新文件请保持一致。提交的代码同样按 GPL-3.0 授权；引入新的第三方库前，请确认其许可与 GPL-3.0 兼容（MIT、BSD、Apache-2.0、LGPL 等均可），并把许可文本放进 `licenses/`。
 
 ## 约定
 

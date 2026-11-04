@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "core/LocalLibrary.h"
 #include "core/TitleParser.h"
 #include <QCoreApplication>
@@ -153,6 +156,9 @@ int main(int argc,char **argv) {
         check(reopened.updateTargets().value(0).after==2,"deleted episodes still mark how far the user has followed");
         hold(show,5);auto cancelled=*follow.item(follow.itemKey(500,resource(5)));cancelled.phase="cancelled";follow.put(cancelled);
         check(follow.updateTargets().value(0).after==3,"cancelled downloads do not advance the update window");
+        auto quiet=follow.preference(500);quiet.follow=false;follow.setPreference(500,quiet);
+        LocalLibrary muted(followPath);muted.load();
+        check(!muted.preference(500).follow&&muted.updateTargets().isEmpty(),"anime with update notices turned off are skipped and stay off");
     }
     check(LocalLibrary::safeFolderName("CON")=="_CON"&&LocalLibrary::safeFolderName("../A:B?*").contains("_")
         &&!LocalLibrary::safeFolderName("../A:B?*").contains('/'),"Windows folder names are safe");

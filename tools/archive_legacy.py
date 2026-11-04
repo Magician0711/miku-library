@@ -1,3 +1,6 @@
+# Anime Nexus - Copyright (C) 2026 Magician0711
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Archive old work before cleanup. Never deletes source files."""
 from pathlib import Path
 import datetime, hashlib, json, zipfile

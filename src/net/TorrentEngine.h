@@ -1,3 +1,6 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #pragma once
 
 #include "core/EngineSettings.h"
@@ -47,11 +50,16 @@ public:
     bool pause(const QString &infoHash);
     bool resume(const QString &infoHash);
     bool remove(const QString &infoHash, bool deleteFiles = false);
+    // Moves a task's data, partial files included, to newPath; the saved .torrent
+    // beside it moves too. The outcome arrives as storageMoved.
+    bool moveStorage(const QString &infoHash, const QString &newPath, QString *error = nullptr);
 
 signals:
     void changed();
     void engineError(const QString &message);
     void torrentRemoved(const QString &infoHash);
+    // newPath is empty and error set when the move failed.
+    void storageMoved(const QString &infoHash, const QString &newPath, const QString &error);
 
 private:
     struct Entry {

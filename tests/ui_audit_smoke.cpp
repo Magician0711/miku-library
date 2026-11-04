@@ -1,8 +1,12 @@
+// Anime Nexus - Copyright (C) 2026 Magician0711
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "ui/Overlays.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/ImageLoader.h"
 #include "ui/Motion.h"
+#include "ui/UpdatePanel.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -162,6 +166,41 @@ int main(int argc,char **argv)
             check(!accepted,"closing the welcome page still declines");
         }
         {
+            // Update notices: one row per anime, buttons hand the notice back, the last one closes the panel.
+            auto *canvas=new QWidget(&window);canvas->setGeometry(0,0,860,570);canvas->show();
+            auto *panel=new UpdatePanel(canvas);
+            auto notice=[](int id,const QString &name,QStringList episodes) {
+                UpdateNotice n;n.target.subject.bangumiId=id;n.target.subject.nameCn=name;
+                n.target.preference.group="Group A";n.target.preference.resolution="1080p";n.episodes=episodes;return n;
+            };
+            QVector<int> downloaded,ignored;
+            QObject::connect(panel,&UpdatePanel::downloadRequested,&window,[&](const UpdateNotice &n){downloaded<<n.target.subject.bangumiId;});
+            QObject::connect(panel,&UpdatePanel::ignoreRequested,&window,[&](const UpdateNotice &n){ignored<<n.target.subject.bangumiId;});
+            panel->addNotice(notice(1,QStringLiteral("番剧一"),{"3"}));
+            panel->addNotice(notice(2,QStringLiteral("番剧二"),{"5","6"}));
+            panel->addNotice(notice(1,QStringLiteral("番剧一"),{"3","4"}));   // a second check replaces the row
+            // Layouts show new rows on the next event-loop pass.
+            auto settle=[](int ms){QElapsedTimer t;t.start();while(t.elapsed()<ms)QCoreApplication::processEvents(QEventLoop::AllEvents,10);};
+            settle(100);
+            auto rows=[&]{QList<QWidget *> out;for(auto *w:panel->findChildren<QFrame *>("UpdateRow"))if(w->isVisibleTo(panel))out<<w;return out;};
+            auto button=[](QWidget *row,const QString &text)->QPushButton *{if(!row)return nullptr;for(auto *b:row->findChildren<QPushButton *>())if(b->text()==text)return b;return nullptr;};
+            auto *all=[&]()->QPushButton *{for(auto *b:panel->findChildren<QPushButton *>())if(b->text()==QStringLiteral("全部下载"))return b;return nullptr;}();
+            check(panel->isVisibleTo(canvas)&&rows().size()==2&&all&&all->isVisibleTo(panel),"update panel lists each anime once and offers download all");
+            check(panel->geometry().right()<=canvas->width()-20&&panel->geometry().bottom()<=canvas->height()-20,"update panel sits in the bottom-right corner");
+            check(episodeSummary({"3","4"})==QStringLiteral("第 3–4 话")&&episodeSummary({"3","5","7"})==QStringLiteral("第 3、5、7 话"),"episode ranges read naturally");
+            if(auto *b=button(rows().value(0),QStringLiteral("下载")))b->click();
+            settle(100);
+            if(auto *b=button(rows().value(0),QStringLiteral("忽略")))b->click();
+            settle(100);
+            check(downloaded.size()==1&&ignored.size()==1&&downloaded.first()!=ignored.first(),"row buttons hand back their own notice");
+            check(!panel->isVisibleTo(canvas),"panel closes after the last row is handled");
+            settle(500);   // let the panel's fades finish before the next test looks for one
+            delete canvas;
+            settle(50);
+        }
+        // Finished fades hide at once and are deleted when the event loop next runs.
+        auto fadeOnScreen=[&]{for(auto *f:window.findChildren<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly))if(f->isVisible())return f;return static_cast<Motion::SnapshotFade *>(nullptr);};
+        {
             // Crossfade: an opaque layer blends the old still over the new one, then leaves.
             auto *panel=new QWidget(&window);panel->setGeometry(420,300,120,80);panel->setAutoFillBackground(true);
             QPalette colors=panel->palette();colors.setColor(QPalette::Window,Qt::red);panel->setPalette(colors);panel->show();
@@ -170,10 +209,10 @@ int main(int argc,char **argv)
             while(clock.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
             Motion::crossfade(panel,Motion::Normal);
             colors.setColor(QPalette::Window,Qt::blue);panel->setPalette(colors);
-            auto *fade=window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly);
+            auto *fade=fadeOnScreen();
             check(!Motion::enabled()||(fade&&fade->testAttribute(Qt::WA_OpaquePaintEvent)),"crossfade layer is opaque so content underneath never repaints per frame");
             QColor mid;clock.restart();
-            while(clock.elapsed()<1500&&window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly)) {
+            while(clock.elapsed()<1500&&fadeOnScreen()) {
                 QCoreApplication::processEvents(QEventLoop::AllEvents,5);
                 if(!mid.isValid()&&clock.elapsed()>=90)mid=pixel();
             }
@@ -181,7 +220,7 @@ int main(int argc,char **argv)
             const bool exposed=window.windowHandle()&&window.windowHandle()->isExposed();
             check(!Motion::enabled()||!exposed||(mid.red()>10&&mid.blue()>10),"crossfade shows a blend of old and new content mid-way");
             const QColor end=pixel();
-            check(!window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly)&&end.blue()>200&&end.red()<40,"crossfade removes itself and leaves the new content");
+            check(!fadeOnScreen()&&end.blue()>200&&end.red()<40,"crossfade removes itself and leaves the new content");
             delete panel;
         }
         {
@@ -201,7 +240,7 @@ int main(int argc,char **argv)
             const QColor first=window.grab(QRect(stack->geometry().center(),QSize(1,1))).toImage().pixelColor(0,0);
             check(!Motion::enabled()||(first.red()>200&&first.blue()<40),"page switch starts from the old page, not a flash of the new one");
             clock.restart();
-            while(clock.elapsed()<1500&&window.findChild<Motion::SnapshotFade *>(QString(),Qt::FindDirectChildrenOnly))
+            while(clock.elapsed()<1500&&fadeOnScreen())
                 QCoreApplication::processEvents(QEventLoop::AllEvents,5);
             const QColor end=window.grab(QRect(stack->geometry().center(),QSize(1,1))).toImage().pixelColor(0,0);
             check(end.blue()>200&&end.red()<40,"page switch ends on the new page");

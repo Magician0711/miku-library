@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(AnimeNexusCpp VERSION 0.6.0 LANGUAGES CXX)
+project(AnimeNexusCpp VERSION 0.7.0 LANGUAGES CXX)
 # The single source of the version shown in About, the user agent and packages.
 add_compile_definitions(ANIME_NEXUS_VERSION="${PROJECT_VERSION}")
 
@@ -34,7 +34,8 @@ if (MSVC)
 endif()
 
 add_executable(OptimizationSmoke tests/optimization_smoke.cpp src/core/Catalog.cpp src/core/Models.cpp src/core/Grouping.cpp src/core/TitleParser.cpp
-    src/net/HttpClient.cpp src/net/BangumiClient.cpp src/net/FeedParser.cpp src/net/Providers.cpp src/net/SearchAggregator.cpp)
+    src/net/HttpClient.cpp src/net/BangumiClient.cpp src/net/FeedParser.cpp src/net/Providers.cpp src/net/SearchAggregator.cpp
+    src/net/AppUpdate.cpp)
 target_include_directories(OptimizationSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 target_link_libraries(OptimizationSmoke PRIVATE Qt6::Core Qt6::Network)
 if(MSVC)
@@ -62,6 +63,7 @@ qt_add_executable(AnimeNexus WIN32
     src/net/AnimeDownloads.cpp
     src/net/TorrentEngine.cpp
     src/net/UpdateChecker.cpp
+    src/net/AppUpdate.cpp
 
     src/ui/Theme.cpp src/ui/Motion.cpp
     src/ui/Overlays.cpp
@@ -139,7 +141,7 @@ if (MSVC)
 endif()
 
 add_executable(UiAuditSmoke tests/ui_audit_smoke.cpp src/ui/Overlays.cpp src/ui/Theme.cpp src/ui/Motion.cpp
-    src/ui/Controls.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp
+    src/ui/Controls.cpp src/ui/Widgets.cpp src/ui/FlowLayout.cpp src/ui/ImageLoader.cpp src/ui/UpdatePanel.cpp
     src/net/HttpClient.cpp src/net/BangumiClient.cpp src/core/Models.cpp)
 target_include_directories(UiAuditSmoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 target_link_libraries(UiAuditSmoke PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
