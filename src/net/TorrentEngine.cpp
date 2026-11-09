@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "TorrentEngine.h"
@@ -19,12 +19,16 @@
 #include <QNetworkInterface>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRandomGenerator>
+#include <QTcpServer>
+#include <QUdpSocket>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
 
+#include <boost/asio/error.hpp>
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/error_code.hpp>
@@ -48,13 +52,37 @@
 #include <cstdint>
 #include <exception>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
+constexpr int kMaxRefusedPorts = 8;
+constexpr int kFallbackPortLow = 20000;
+constexpr int kFallbackPortHigh = 48000;
 
 QString hashToQString(const lt::info_hash_t &hashes)
 {
     return hashes.has_v1()
         ? QString::fromLatin1(QByteArray(hashes.v1.data(), 20).toHex())
         : QString::fromLatin1(QByteArray(hashes.v2.data(), 32).toHex());
+}
+
+// Saved torrents stay beside the video so tasks can resume and keep seeding, but
+// they are bookkeeping: keep them out of the user's folder view.
+void hideFile(const QString &path)
+{
+#ifdef Q_OS_WIN
+    const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
+    const DWORD attributes = GetFileAttributesW(native.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_HIDDEN))
+        SetFileAttributesW(native.c_str(), attributes | FILE_ATTRIBUTE_HIDDEN);
+#else
+    Q_UNUSED(path)
+#endif
 }
 
 // Validate before writing so HTML/error responses can never become .torrent files.
@@ -84,13 +112,14 @@ QString saveTorrentData(const QByteArray &data, const QString &savePath, QString
                                    + QStringLiteral(".torrent"));
         if (!QFile::exists(path)) break;
         QFile existing(path);
-        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == data) return path;
+        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == data) { hideFile(path); return path; }
     }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
         if (error) *error = QStringLiteral("无法保存种子文件：%1\n%2").arg(path, file.errorString());
         return {};
     }
+    hideFile(path);
     return path;
 }
 
@@ -152,7 +181,7 @@ bool TorrentEngine::start(QString *error)
         return true;
     try {
         lt::settings_pack pack;
-        pack.set_str(lt::settings_pack::user_agent, "AnimeNexus/0.4 libtorrent");
+        pack.set_str(lt::settings_pack::user_agent, "MikuLibrary/" MIKU_LIBRARY_VERSION " libtorrent");
         pack.set_int(lt::settings_pack::alert_mask,
                      static_cast<int>(static_cast<std::uint32_t>(
                          lt::alert_category::error | lt::alert_category::status | lt::alert_category::storage | lt::alert_category::tracker)));
@@ -200,7 +229,7 @@ void TorrentEngine::stop()
     for (auto *reply : m_net->findChildren<QNetworkReply *>()) reply->abort();
     m_session.reset();
     m_metadataPending.clear();m_readds.clear();
-    m_saveErrors.clear();m_trackerWarnings.clear();m_networkWarning.clear();
+    m_saveErrors.clear();m_trackerWarnings.clear();m_networkWarning.clear();m_refusedPorts.clear();m_fallbackPort=0;
     emit changed();
 }
 
@@ -214,18 +243,42 @@ QString TorrentEngine::version() const
     return QStringLiteral("libtorrent ") + QString::fromUtf8(lt::version());
 }
 
+int TorrentEngine::portToListenOn(const QString &bindAddress)
+{
+    if (m_settings.listenPort > 0 && !m_refusedPorts.contains(m_settings.listenPort))
+        return m_settings.listenPort;
+    if (m_fallbackPort > 0 && !m_refusedPorts.contains(m_fallbackPort))
+        return m_fallbackPort;
+    // Chosen here and not left to the system with port 0: it picks a free TCP port and
+    // libtorrent then needs the same number for UDP, which may be reserved. Once chosen
+    // it stays, as a changed port would reopen every socket on each settings save.
+    const QHostAddress address = bindAddress.isEmpty() ? QHostAddress(QHostAddress::Any) : QHostAddress(bindAddress);
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        const int candidate = QRandomGenerator::global()->bounded(kFallbackPortLow, kFallbackPortHigh);
+        if (m_refusedPorts.contains(candidate))
+            continue;
+        QTcpServer tcp;
+        QUdpSocket udp;
+        if (tcp.listen(address, candidate) && udp.bind(address, candidate))
+            return m_fallbackPort = candidate;
+    }
+    return 0;
+}
+
 void TorrentEngine::applySettings(const EngineSettings &settings)
 {
+    const bool resumeSeeding = m_settings.stopOnCompletion && !settings.stopOnCompletion;
     m_settings = settings;
     if (!m_session)
         return;
     lt::settings_pack pack;
     QString bindAddress = m_settings.bindAddress;
     if (bindAddress.isEmpty())
-        bindAddress = qEnvironmentVariable("ANIME_NEXUS_BIND_IP");
+        bindAddress = qEnvironmentVariable("MIKU_LIBRARY_BIND_IP");
+    const int port = portToListenOn(bindAddress);
     const QString listen = bindAddress.isEmpty()
-        ? QStringLiteral("0.0.0.0:%1,[::]:%1").arg(settings.listenPort)
-        : QStringLiteral("%1:%2").arg(bindAddress.contains(':')?"["+bindAddress+"]":bindAddress).arg(settings.listenPort);
+        ? QStringLiteral("0.0.0.0:%1,[::]:%1").arg(port)
+        : QStringLiteral("%1:%2").arg(bindAddress.contains(':')?"["+bindAddress+"]":bindAddress).arg(port);
     pack.set_str(lt::settings_pack::listen_interfaces, listen.toStdString());
     // Empty means the OS routes each peer; also clears a previous manual bind.
     pack.set_str(lt::settings_pack::outgoing_interfaces, bindAddress.toStdString());
@@ -257,6 +310,12 @@ void TorrentEngine::applySettings(const EngineSettings &settings)
     m_session->apply_settings(pack);
     if(settings.stopOnCompletion)for(const auto &handle:m_session->get_torrents())
         if(handle.status().is_finished)stopCompleted(handle);
+    // Only tasks the setting itself stopped go back to seeding, not ones paused by hand.
+    if(resumeSeeding) {
+        QStringList stopped;
+        for(auto &entry:m_entries)if(entry.autoStopped){entry.autoStopped=false;stopped<<entry.infoHash;}
+        for(const auto &hash:stopped)resume(hash);
+    }
     emit changed();
 }
 
@@ -265,6 +324,7 @@ QJsonObject TorrentEngine::networkStatus() const
     if(!m_session)return {{"running",false}};
     const auto settings=m_session->get_settings();
     return {{"running",running()},{"listen_interfaces",QString::fromStdString(settings.get_str(lt::settings_pack::listen_interfaces))},
+        {"listen_port",int(m_session->listen_port())},
         {"outgoing_interfaces",QString::fromStdString(settings.get_str(lt::settings_pack::outgoing_interfaces))},
         {"warning",m_networkWarning}};
 }
@@ -530,7 +590,7 @@ void TorrentEngine::fetchTorrent(const QString &url, const QString &savePath,
                                  AddCallback callback, bool paused,const QStringList &onlyEpisodes,const QStringList &trackers,const QString &expectedHash)
 {
     QNetworkRequest request{QUrl(url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AnimeNexus/0.4"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("MikuLibrary/" MIKU_LIBRARY_VERSION));
     request.setTransferTimeout(30000);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto *reply = m_net->get(request);
@@ -665,8 +725,12 @@ bool TorrentEngine::remove(const QString &infoHash, bool deleteFiles)
     for (const auto &handle : m_session->get_torrents()) {
         if (hashString(handle).compare(infoHash, Qt::CaseInsensitive) == 0) {
             lt::remove_flags_t flags{};
-            if (deleteFiles)
+            if (deleteFiles) {
                 flags = lt::session::delete_files;
+                for (const auto &entry : m_entries)
+                    if (entry.infoHash.compare(infoHash, Qt::CaseInsensitive) == 0)
+                        m_deleting.insert(hashString(handle), entry);
+            }
             m_session->remove_torrent(handle, flags);
             removeEntry(infoHash);
             m_metadataPending.remove(infoHash);m_readds.remove(infoHash);
@@ -691,6 +755,20 @@ bool TorrentEngine::moveStorage(const QString &infoHash,const QString &newPath,Q
         return true;
     }
     if(error)*error=QStringLiteral("下载任务已不存在。");return false;
+}
+
+void TorrentEngine::cleanUpDeleted(const QString &torrentFile,const QString &savePath)
+{
+    // Only what this app saved beside the data: an imported original stays where it is.
+    const QFileInfo torrent(torrentFile);
+    if(torrent.isFile()&&torrent.fileName().startsWith(QStringLiteral("torrent-"))&&QDir(torrent.absolutePath())==QDir(savePath))
+        QFile::remove(torrent.absoluteFilePath());
+    // rmdir only succeeds on an empty folder, so other episodes and the user's own
+    // files stop the walk. Folders outside the download root were not created for it.
+    const QString root=QDir::cleanPath(m_settings.savePath);
+    QString folder=QDir::cleanPath(savePath);
+    if(root.isEmpty()||!folder.startsWith(root+QLatin1Char('/'),Qt::CaseInsensitive))return;
+    while(folder.size()>root.size()&&QDir().rmdir(folder))folder=QFileInfo(folder).absolutePath();
 }
 
 void TorrentEngine::appendEntry(const Entry &entry)
@@ -763,6 +841,9 @@ void TorrentEngine::loadState()
         for(const auto &tracker:object.value("trackers").toArray())entry.trackers.append(tracker.toString());
         if (!entry.uri.isEmpty())
             m_entries.push_back(entry);
+        // Torrents saved by older versions are still visible.
+        if (QFileInfo(entry.uri).fileName().startsWith(QStringLiteral("torrent-")))
+            hideFile(entry.uri);
     }
 }
 
@@ -792,7 +873,23 @@ void TorrentEngine::pollAlerts()
         } else if(const auto *tracker=lt::alert_cast<lt::tracker_reply_alert>(alert)) {
             m_trackerWarnings.remove(hashString(tracker->handle));stateChanged=true;
         } else if(const auto *listen=lt::alert_cast<lt::listen_failed_alert>(alert)) {
-            m_networkWarning=QStringLiteral("网络监听失败：")+QString::fromStdString(listen->error.message());qWarning().noquote()<<m_networkWarning;stateChanged=true;
+            // Windows reserves whole ranges of ports, and they move between boots, so any fixed
+            // port can stop working. libtorrent only moves on by itself when one is in use.
+            const bool refused=listen->error==boost::asio::error::access_denied||listen->error==boost::asio::error::address_in_use;
+            if(m_refusedPorts.contains(listen->port)) {
+                // The other sockets of the same attempt.
+            } else if(refused&&listen->port!=0&&m_refusedPorts.size()<kMaxRefusedPorts) {
+                m_refusedPorts.insert(listen->port);
+                m_networkWarning.clear();
+                qInfo().noquote()<<QStringLiteral("监听端口 %1 无法使用（%2），改用其他端口").arg(listen->port).arg(QString::fromStdString(listen->error.message()));
+                // Not from here: this runs in the middle of the alert list.
+                QMetaObject::invokeMethod(this,[this]{if(m_session)applySettings(m_settings);},Qt::QueuedConnection);
+                stateChanged=true;
+            } else {
+                m_networkWarning=QStringLiteral("网络监听失败（%1 %2 端口 %3）：").arg(QString::fromUtf8(listen->listen_interface()),
+                    listen->socket_type==lt::socket_type_t::utp?QStringLiteral("UDP"):QStringLiteral("TCP")).arg(listen->port)+QString::fromStdString(listen->error.message());
+                qWarning().noquote()<<m_networkWarning;stateChanged=true;
+            }
         } else if (const auto *metadata = lt::alert_cast<lt::metadata_received_alert>(alert)) {
             const QString hash = hashString(metadata->handle);
             if (m_metadataPending.contains(hash)) {
@@ -813,6 +910,16 @@ void TorrentEngine::pollAlerts()
                 }
             }
             stateChanged=true;
+        } else if(const auto *deleted=lt::alert_cast<lt::torrent_deleted_alert>(alert)) {
+            const auto entry=m_deleting.take(hashToQString(deleted->info_hashes));
+            if(!entry.infoHash.isEmpty())cleanUpDeleted(entry.uri,entry.savePath);
+        } else if(const auto *failed=lt::alert_cast<lt::torrent_delete_failed_alert>(alert)) {
+            // Usually a video still open in a player; whatever could go still goes.
+            const auto entry=m_deleting.take(hashToQString(failed->info_hashes));
+            if(!entry.infoHash.isEmpty()) {
+                cleanUpDeleted(entry.uri,entry.savePath);
+                emit engineError(QStringLiteral("部分文件没有删除，可能正被其他程序使用：%1").arg(QDir::toNativeSeparators(entry.savePath)));
+            }
         } else if(const auto *moved=lt::alert_cast<lt::storage_moved_alert>(alert)) {
             const QString hash=hashString(moved->handle);
             const QString path=QString::fromUtf8(moved->storage_path());
@@ -822,7 +929,7 @@ void TorrentEngine::pollAlerts()
                 const QFileInfo torrent(entry.uri);
                 if(torrent.isFile()&&QDir(torrent.absolutePath())==QDir(entry.savePath)) {
                     const QString target=QDir(path).absoluteFilePath(torrent.fileName());
-                    if(!QFileInfo::exists(target)&&QFile::rename(torrent.absoluteFilePath(),target))entry.uri=target;
+                    if(!QFileInfo::exists(target)&&QFile::rename(torrent.absoluteFilePath(),target)){entry.uri=target;hideFile(target);}
                 }
                 entry.savePath=path;
             }

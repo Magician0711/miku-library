@@ -1,4 +1,4 @@
-# Anime Nexus - Copyright (C) 2026 Magician0711
+# Miku Library - Copyright (C) 2026 Magician0711
 # SPDX-License-Identifier: GPL-3.0-only
 
 from pathlib import Path
@@ -8,8 +8,8 @@ PROJECT=Path(__file__).resolve().parents[1]
 OUT=PROJECT.parent/'release_packages'
 OUT.mkdir(exist_ok=True)
 now=datetime.datetime.now(datetime.timezone.utc).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
-NAME='AnimeNexus-Windows-x64-Portable-'+now.strftime('%Y%m%d-%H%M%S')
-STAGE=OUT/NAME/'AnimeNexus'
+NAME='MikuLibrary-Windows-x64-Portable-'+now.strftime('%Y%m%d-%H%M%S')
+STAGE=OUT/NAME/'MikuLibrary'
 ARCHIVE=OUT/(NAME+'.zip')
 VERIFY=OUT/(NAME+'-verification')
 CRT=Path(r'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Redist\MSVC\14.51.36231\x64\Microsoft.VC145.CRT')
@@ -26,17 +26,17 @@ def digest(path):
     with path.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
 
 # Keep a clean distributable, with only the current executable and usable plugins.
-for file in (PROJECT/'dist/AnimeNexus').rglob('*'):
+for file in (PROJECT/'dist/MikuLibrary').rglob('*'):
     if not file.is_file():continue
-    rel=file.relative_to(PROJECT/'dist/AnimeNexus')
-    if file.suffix.lower() not in ('.dll','.json') and rel.as_posix()!='AnimeNexus.exe':continue
+    rel=file.relative_to(PROJECT/'dist/MikuLibrary')
+    # QML modules are located through their qmldir files.
+    if file.suffix.lower() not in ('.dll','.json','.qml','.glsl') and file.name!='qmldir' and rel.as_posix()!='MikuLibrary.exe':continue
     if rel.parts[0]=='sqldrivers' and file.name!='qsqlite.dll':continue
     copy(file,STAGE/rel)
-for file in CRT.glob('*.dll'):copy(file,STAGE/file.name)
-write(STAGE/'qt.conf','[Paths]\nPrefix=.\nPlugins=.\n')
+write(STAGE/'qt.conf','[Paths]\nPrefix=.\nPlugins=.\nQmlImports=qml\n')
 
 # Include the matching source and notices, never the user's profile or history.
-for directory in ('src','tests','assets','config','tools','.github'):
+for directory in ('src','qml','tests','assets','config','tools','.github'):
     shutil.copytree(PROJECT/directory,STAGE/'Source'/directory)
 for name in ('CMakeLists.txt','build.bat','README.md','UI_REWRITE.md','LICENSE','.gitignore','.gitattributes'):
     copy(PROJECT/name,STAGE/'Source'/name)
@@ -44,31 +44,31 @@ copy(PROJECT/'LICENSE',STAGE/'LICENSE')
 # The README links into docs/; ship all of it so those links work offline.
 shutil.copytree(PROJECT/'docs',STAGE/'Source'/'docs')
 readme=(STAGE/'Source/README.md').read_text(encoding='utf-8-sig')
-write(STAGE/'Source/README.md','> 此目录为对应源码。无需编译即可使用压缩包上层的 `AnimeNexus.exe`。\n\n'+readme)
+write(STAGE/'Source/README.md','> 此目录为对应源码。无需编译即可使用压缩包上层的 `MikuLibrary.exe`。\n\n'+readme)
 for path in (STAGE/'config/anime_sites.json',STAGE/'Source/config/anime_sites.json'):
     catalog=json.loads(path.read_text(encoding='utf-8-sig'));catalog.pop('origin_conversation_id',None)
     write(path,json.dumps(catalog,ensure_ascii=False,indent=2)+'\n')
 for package in (OLD/'licenses').iterdir():
-    if package.is_dir() and package.name not in {'DB-IP','NaturalEarth','libmaxminddb'}:
+    if package.is_dir() and package.name not in {'DB-IP','NaturalEarth','libmaxminddb','DirectXShaderCompiler'}:
         shutil.copytree(package,STAGE/'licenses'/package.name)
-write(STAGE/'licenses/Microsoft/NOTICE.txt','Microsoft Visual C++ Runtime (x64)\nApp-local runtime DLLs are included beside AnimeNexus.exe.\nOriginal Microsoft redistribution terms apply.\nhttps://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files\n')
-write(STAGE/'THIRD_PARTY_NOTICES.txt','Qt 6.8.3 (including Concurrent), libtorrent 2.1.2, OpenSSL, Boost and their runtime dependencies are bundled as dynamically linked libraries. Original third-party licenses and Qt SPDX notices are in licenses/. Corresponding application source is in Source/.\n')
-write(STAGE/'使用说明.txt','''Anime Nexus · Windows x64 便携版
+write(STAGE/'licenses/Microsoft/NOTICE.txt','Microsoft Visual C++ Runtime (x64)\nApp-local runtime DLLs are included beside MikuLibrary.exe.\nOriginal Microsoft redistribution terms apply.\nhttps://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files\n')
+write(STAGE/'THIRD_PARTY_NOTICES.txt','libmpv (mpv 0.42 development build by shinchiro/mpv-winbuild-cmake, GPL; sources: github.com/mpv-player/mpv and github.com/shinchiro/mpv-winbuild-cmake) and Anime4K shaders (MIT) power the built-in player. Qt 6.8.3 (including Concurrent), libtorrent 2.1.2, OpenSSL, Boost and their runtime dependencies are bundled as dynamically linked libraries. Original third-party licenses and Qt SPDX notices are in licenses/. Corresponding application source is in Source/.\n')
+write(STAGE/'使用说明.txt','''Miku Library · Windows x64 便携版
 
 1. 将压缩包完整解压到任意文件夹。
-2. 双击同目录 AnimeNexus.exe，首次运行会自动建立下载目录。
+2. 双击同目录 MikuLibrary.exe，首次运行会自动建立下载目录。
 3. 不要只复制主程序，DLL 和插件文件夹需要一起保留。
 
 已包含 Qt、内置 libtorrent 下载引擎、OpenSSL 和 VC++ 本地运行库。
 无需安装 Python、Qt SDK 或其他下载器。
 默认使用内置下载器；上传总限速 1024 KiB/s，其余速率和任务数量不限。
-默认下载完成后停止传输。
+默认下载完成后继续做种，可在设置中关闭。
 
 可在侧栏底部、下载任务页或设置中切换到已安装的外部下载器。
 外部软件需自行安装；内置下载器可以直接使用。
 搜索、封面和资源检索需要网络。
 
-个人配置、追番和下载记录由软件在当前用户的 .anime-nexus 文件夹中创建。
+个人配置、追番和下载记录由软件在当前用户的 .miku-library 文件夹中创建。
 本包不含打包者的个人配置、下载记录、影片、缓存或旧版程序。
 Source/ 为对应源码和构建说明，日常运行不需要打开该目录。
 ''')
@@ -93,7 +93,7 @@ for file in STAGE.rglob('*'):
     binaries.append({'binary':file.relative_to(STAGE).as_posix(),'imports':resolutions})
 if missing:raise RuntimeError('Missing runtime DLLs: '+', '.join(sorted(missing)))
 write(STAGE/'DEPENDENCY_REPORT.json',json.dumps({'platform':'Windows x64','unresolved':[],'binaries':binaries},indent=2)+'\n')
-assert digest(PROJECT/'build/AnimeNexus.exe')==digest(STAGE/'AnimeNexus.exe')
+assert digest(PROJECT/'build/MikuLibrary.exe')==digest(STAGE/'MikuLibrary.exe')
 for file in STAGE.rglob('*'):
     if file.is_file() and file.suffix.lower() in ('.cpp','.h','.md','.json','.txt','.bat'):
         content=file.read_text(encoding='utf-8-sig',errors='replace')
@@ -107,12 +107,12 @@ for file in sorted(STAGE.rglob('*')):
 write(STAGE/'PACKAGE_MANIFEST.json',json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
 with zipfile.ZipFile(ARCHIVE,'x',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
     for file in sorted(STAGE.rglob('*')):
-        if file.is_file():z.write(file,'AnimeNexus/'+file.relative_to(STAGE).as_posix())
+        if file.is_file():z.write(file,'MikuLibrary/'+file.relative_to(STAGE).as_posix())
 VERIFY.mkdir()
 with zipfile.ZipFile(ARCHIVE) as z:
     if z.testzip() is not None:raise RuntimeError('ZIP integrity check failed')
     z.extractall(VERIFY)
-unpacked=VERIFY/'AnimeNexus'
+unpacked=VERIFY/'MikuLibrary'
 for item in manifest['files']:
     p=unpacked/item['path']
     if p.stat().st_size!=item['bytes'] or digest(p)!=item['sha256']:raise RuntimeError('Extracted content mismatch: '+item['path'])
@@ -120,7 +120,7 @@ for item in manifest['files']:
 # Start the actual unpacked executable using only Windows PATH entries, a clean
 # per-child profile, and the bundled offscreen platform. No real task is loaded.
 profile=VERIFY/'全新 用户配置'
-state=profile/'.anime-nexus';state.mkdir(parents=True)
+state=profile/'.miku-library';state.mkdir(parents=True)
 downloads=profile/'Downloads';downloads.mkdir()
 # The first-run guide is modal; accept it so startup reaches the main window.
 config={'disclaimer_accepted':1,'engine':{'save_path':str(downloads),'bind_address':'127.0.0.1','listen_port':0,'dht':False,'lsd':False,'upnp':False},'paths':{'download_dir':str(downloads)}}
@@ -129,23 +129,23 @@ env=os.environ.copy()
 for key in list(env):
     if key.upper().startswith(('QT_','QML')) or key.upper() in {'QTDIR','CMAKE_PREFIX_PATH','VCPKG_ROOT'}:env.pop(key,None)
 env['PATH']=str(system)+';'+str(system.parent)
-env['ANIME_NEXUS_DATA_DIR']=str(state)
+env['MIKU_LIBRARY_DATA_DIR']=str(state)
 env['QT_QPA_PLATFORM']='windows'
 env['QT_PLUGIN_PATH']=str(unpacked)
 startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=0
 stderr=VERIFY/'startup-stderr.txt'
 with stderr.open('wb') as output:
-    process=subprocess.Popen([str(unpacked/'AnimeNexus.exe')],cwd=unpacked,env=env,stdout=output,stderr=output,startupinfo=startup)
+    process=subprocess.Popen([str(unpacked/'MikuLibrary.exe')],cwd=unpacked,env=env,stdout=output,stderr=output,startupinfo=startup)
     try:
         limit=time.monotonic()+15
         while time.monotonic()<limit:
             if process.poll() is not None:raise RuntimeError('Unpacked application exited: '+str(process.returncode)+' '+stderr.read_text(errors='replace')[:1000])
-            if (state/'local-library.json').is_file() and (state/'anime_nexus.db').is_file():break
+            if (state/'local-library.json').is_file() and (state/'miku_library.db').is_file():break
             time.sleep(.2)
         else:raise RuntimeError('Isolated startup did not reach the main window')
         time.sleep(1)
         if process.poll() is not None:raise RuntimeError('Unpacked application crashed during startup')
-        log=(state/'anime_nexus_cpp.log').read_text(encoding='utf-8-sig',errors='replace')
+        log=(state/'miku_library.log').read_text(encoding='utf-8-sig',errors='replace')
         if 'catalog loaded:' not in log:raise RuntimeError('Packaged site catalog did not load')
         startup_result={'status':'PASS','profile':'isolated','path':'Windows system directories only','platform':'bundled native Windows Qt plugin','catalog_loaded':True,'database_created':True,'local_inventory_created':True}
     finally:

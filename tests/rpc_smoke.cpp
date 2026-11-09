@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HttpFixture.h"
@@ -12,7 +12,7 @@ int main(int argc,char **argv){
     QCoreApplication app(argc,argv);QTemporaryDir dir;QFile report(app.applicationDirPath()+"/rpc-smoke.log");report.open(QIODevice::WriteOnly);int failed=0;
     auto check=[&](bool ok,QString message){report.write(message.toUtf8()+(ok?" PASS\n":" FAIL\n"));report.flush();if(!ok)++failed;};
     for(const auto &type:QStringList{"qbittorrent","transmission","aria2"}){
-        LocalLibrary library(dir.filePath(type+".json"));library.load();AppConfig config;config.downloader.selected=type;
+        LocalLibrary library(dir.filePath(type+".json"));library.load();AppConfig config;config.engine.stopOnCompletion=true;config.downloader.selected=type;
         HttpFixture server;config.downloader.rpc[type]={true,server.url(type=="qbittorrent"?"":"/rpc"),"test","secret"};
         LibraryItem item;item.key=type;item.downloader=type;item.subject.bangumiId=42;item.subject.nameCn="Test Anime";item.groupKey="group";
         item.resource.title="[Group] Test Anime - 01";item.resource.releaseGroup="Group";item.resource.infoHash=QString(40,'a');item.resource.magnetUri="magnet:?xt=urn:btih:"+item.resource.infoHash;

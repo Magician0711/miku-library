@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ExternalDownloader.h"
@@ -51,7 +51,7 @@ bool ExternalDownloader::validate(const DownloaderSettings &settings,QString *er
     if(!exe.isFile()||exe.suffix().compare("exe",Qt::CaseInsensitive)!=0)
         return fail(QStringLiteral("请在设置中选择已安装下载器的 .exe 程序。"));
     if(exe.canonicalFilePath().compare(QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath(),Qt::CaseInsensitive)==0)
-        return fail(QStringLiteral("请选择外部下载器，不能选择 Anime Nexus 自身。"));
+        return fail(QStringLiteral("请选择外部下载器，不能选择 Miku Library 自身。"));
     if(settings.selected=="custom") {
         if(!settings.customArguments.contains("{input}"))return fail(QStringLiteral("自定义参数必须包含 {input}，用于传入磁力链接或种子文件。"));
         QString rest=settings.customArguments;rest.remove("{input}");rest.remove("{saveDir}");rest.remove("{name}");

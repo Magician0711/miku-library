@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AppConfig.h"
@@ -20,16 +20,16 @@ QString systemDownloads()
 }
 
 PathConfig::PathConfig()
-    : downloadDir(QDir(systemDownloads()).filePath(QStringLiteral("AnimeNexus")))
+    : downloadDir(QDir(systemDownloads()).filePath(QStringLiteral("library")))
     , libraryDir(QDir::homePath() + QStringLiteral("/AnimeLibrary"))
 {
 }
 
 QString AppConfig::dataDir()
 {
-    const QString overridePath=qEnvironmentVariable("ANIME_NEXUS_DATA_DIR").trimmed();
+    const QString overridePath=qEnvironmentVariable("MIKU_LIBRARY_DATA_DIR").trimmed();
     if(!overridePath.isEmpty())return QDir(overridePath).absolutePath();
-    return QDir::homePath() + QStringLiteral("/.anime-nexus");
+    return QDir::homePath() + QStringLiteral("/.miku-library");
 }
 
 QString AppConfig::configPath()
@@ -61,6 +61,18 @@ AppConfig AppConfig::load()
     cfg.appearance = root.value(QStringLiteral("appearance")).toString(cfg.appearance);
     cfg.disclaimerAccepted = root.value(QStringLiteral("disclaimer_accepted")).toInt(cfg.disclaimerAccepted);
     cfg.checkAppUpdates = root.value(QStringLiteral("check_app_updates")).toBool(cfg.checkAppUpdates);
+    cfg.closeAction = root.value(QStringLiteral("close_action")).toString(cfg.closeAction);
+    if (cfg.closeAction != QStringLiteral("tray") && cfg.closeAction != QStringLiteral("quit"))
+        cfg.closeAction = QStringLiteral("ask");
+    cfg.notifyDownloads = root.value(QStringLiteral("notify_downloads")).toBool(cfg.notifyDownloads);
+    cfg.removeAction = root.value(QStringLiteral("remove_action")).toString(cfg.removeAction);
+    if (cfg.removeAction != QStringLiteral("keep") && cfg.removeAction != QStringLiteral("delete"))
+        cfg.removeAction = QStringLiteral("ask");
+    const auto proxy = root.value(QStringLiteral("proxy")).toObject();
+    cfg.proxyMode = proxy.value(QStringLiteral("mode")).toString(cfg.proxyMode);
+    cfg.proxyHost = proxy.value(QStringLiteral("host")).toString();
+    cfg.proxyPort = proxy.value(QStringLiteral("port")).toInt();
+    cfg.updateIntervalHours = qBound(0, root.value(QStringLiteral("update_interval_hours")).toInt(), 24);
     cfg.language = root.value(QStringLiteral("language")).toString(cfg.language);
 
     cfg.downloader=DownloaderSettings::fromJson(root.value("downloader").toObject());
@@ -88,6 +100,13 @@ bool AppConfig::save() const
     root.insert(QStringLiteral("appearance"), appearance);
     root.insert(QStringLiteral("disclaimer_accepted"), disclaimerAccepted);
     root.insert(QStringLiteral("check_app_updates"), checkAppUpdates);
+    root.insert(QStringLiteral("close_action"), closeAction);
+    root.insert(QStringLiteral("notify_downloads"), notifyDownloads);
+    root.insert(QStringLiteral("remove_action"), removeAction);
+    root.insert(QStringLiteral("proxy"), QJsonObject{{QStringLiteral("mode"), proxyMode},
+                                                     {QStringLiteral("host"), proxyHost},
+                                                     {QStringLiteral("port"), proxyPort}});
+    root.insert(QStringLiteral("update_interval_hours"), updateIntervalHours);
     root.insert(QStringLiteral("language"), language);
 
     QSaveFile file(configPath());
@@ -99,7 +118,7 @@ bool AppConfig::save() const
 
 QString AppConfig::defaultDownloadDirectory()
 {
-    return QDir(systemDownloads()).absoluteFilePath(QStringLiteral("AnimeNexus"));
+    return QDir(systemDownloads()).absoluteFilePath(QStringLiteral("library"));
 }
 
 AppConfig::DownloadDirectoryState AppConfig::prepareDownloadDirectory(QString *error,const QString &downloadsRoot)
@@ -111,9 +130,9 @@ AppConfig::DownloadDirectoryState AppConfig::prepareDownloadDirectory(QString *e
         return DownloadDirectoryState::MissingSaved;
     }
     const QString root=downloadsRoot.isEmpty()?systemDownloads():downloadsRoot;
-    const QString target=QDir(root).absoluteFilePath(QStringLiteral("AnimeNexus"));
+    const QString target=QDir(root).absoluteFilePath(QStringLiteral("library"));
     if(!QDir().mkpath(target) || !QFileInfo(target).isDir()) {
-        if(error)*error=QStringLiteral("无法在系统下载文件夹中创建 AnimeNexus，请选择其他下载目录。");
+        if(error)*error=QStringLiteral("无法在系统下载文件夹中创建 library，请选择其他下载目录。");
         return DownloadDirectoryState::Error;
     }
     engine.savePath=target;paths.downloadDir=target;hasSavedDownloadDirectory=true;

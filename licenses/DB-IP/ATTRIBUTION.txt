@@ -1,0 +1,5 @@
+IP Geolocation by DB-IP
+https://db-ip.com/
+Database: IP to Country Lite
+License: Creative Commons Attribution 4.0 International
+https://db-ip.com/db/download/ip-to-country-lite

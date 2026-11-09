@@ -1,5 +1,9 @@
 @echo off
 setlocal
+rem Ninja reads the compiler's header list (/showIncludes) to know what to rebuild.
+rem On localized Windows that list is printed in the console code page; switch to
+rem UTF-8 so it matches the prefix CMake recorded, otherwise header edits are missed.
+chcp 65001 >nul
 cd /d "%~dp0"
 
 set "VS_DIR=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools"
@@ -41,17 +45,10 @@ if errorlevel 1 exit /b 1
 "%CMAKE%" --build build --parallel
 if errorlevel 1 exit /b 1
 
-if exist dist\AnimeNexus rmdir /s /q dist\AnimeNexus
-mkdir dist\AnimeNexus
-copy /y build\AnimeNexus.exe dist\AnimeNexus\AnimeNexus.exe >nul
-xcopy /e /i /y config dist\AnimeNexus\config >nul
-xcopy /y "%VCPKG_ROOT%\installed\x64-windows\bin\*.dll" dist\AnimeNexus\ >nul
-
-"%QT_DIR%\bin\windeployqt.exe" --release --no-translations --no-opengl-sw ^
-    --no-system-d3d-compiler --dir dist\AnimeNexus dist\AnimeNexus\AnimeNexus.exe
+python tools\deploy_dist.py
 if errorlevel 1 exit /b 1
 
 echo.
 echo Build complete:
-echo   dist\AnimeNexus\AnimeNexus.exe
+echo   dist\MikuLibrary\MikuLibrary.exe
 endlocal

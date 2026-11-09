@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "LocalLibrary.h"
@@ -62,7 +62,7 @@ bool LocalLibrary::load(QString *error)
         const auto o=value.toObject();
         DownloadPreference p;p.group=o.value("group").toString();p.resolution=o.value("resolution").toString();
         p.language=o.value("language").toString();p.subtitleType=o.value("subtitle_type").toString();
-        p.ignoredThrough=o.value("ignored_through").toInt();p.follow=o.value("follow").toBool(true);
+        p.ignoredThrough=o.value("ignored_through").toInt();p.follow=o.value("follow").toBool(true);p.autoDownload=o.value("auto_download").toBool();
         if(o.value("subject_id").toInt()>0)m_preferences.insert(o.value("subject_id").toInt(),p);
     }
     for(const auto &value:document.object().value("downloads").toArray()) {
@@ -142,7 +142,7 @@ bool LocalLibrary::save(QString *error) const
     QJsonArray preferences;
     for(auto it=m_preferences.cbegin();it!=m_preferences.cend();++it)
         preferences.append(QJsonObject{{"subject_id",it.key()},{"group",it->group},{"resolution",it->resolution},
-            {"language",it->language},{"subtitle_type",it->subtitleType},{"ignored_through",it->ignoredThrough},{"follow",it->follow}});
+            {"language",it->language},{"subtitle_type",it->subtitleType},{"ignored_through",it->ignoredThrough},{"follow",it->follow},{"auto_download",it->autoDownload}});
     QSaveFile file(m_path);
     const auto data=QJsonDocument(QJsonObject{{"schema_version",1},{"downloads",entries},{"preferences",preferences}}).toJson();
     if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit()) {
@@ -462,7 +462,7 @@ bool LocalLibrary::put(const LibraryItem &item,QString *error)
 void LocalLibrary::reconcile(const QString &hash,const QVector<DownloadFile> &files,bool completed,const QString &phase)
 {
     if(files.isEmpty())return;
-    bool changed=false;
+    bool changed=false;QVector<LibraryItem> finished;
     for(auto &i:m_items)if(i.hash==hash) {
         QVector<LibraryFile> media;QSet<QString> actualEpisodes;
         for(const auto &f:files)if(f.wanted&&isVideoFile(f.path)) {
@@ -479,9 +479,13 @@ void LocalLibrary::reconcile(const QString &hash,const QVector<DownloadFile> &fi
             const auto numbers=sortedNumbers(actualEpisodes);
             if(numbers!=i.episodes){i.episodes=numbers;changed=true;}
         }
-        if(!same||i.complete!=completed||i.phase!=phase){i.files=media;i.complete=completed;i.phase=phase;changed=true;}
+        if(!same||i.complete!=completed||i.phase!=phase) {
+            if(completed&&!i.complete&&!media.isEmpty())finished.append(i);
+            i.files=media;i.complete=completed;i.phase=phase;changed=true;
+        }
     }
     if(changed){QString error;if(!save(&error))emit storageError(error);emit this->changed();}
+    for(const auto &item:finished)emit downloadCompleted(item);
 }
 
 void LocalLibrary::markRemoved(const QString &hash)

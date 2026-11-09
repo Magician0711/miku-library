@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AnimeDownloads.h"
@@ -13,6 +13,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QLocale>
+#include <QStorageInfo>
 #include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QTimer>
@@ -271,6 +273,7 @@ void AnimeDownloads::downloadOne(const AnimeSubject &subject,const ResourceResul
         emit information(QStringLiteral("同一字幕组的这些话数已下载或正在下载，已跳过重复任务。"));return;
     }
     if(missing.size()!=plan.episodes.size()){plan.onlyEpisodes=missing;plan.episodes=missing;}
+    if(!hasRoomFor({plan}))return;
     if(reserve(subject,plan)){emit queued();processNext();}
 }
 
@@ -288,6 +291,7 @@ void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<Res
     for(const auto &i:m_library->items())if(i.subject.bangumiId==subject.bangumiId&&i.groupKey==group&&i.downloader=="builtin"&&i.phase=="paused")
         m_engine->resume(i.hash);
     QString reason;const auto plans=m_library->plan(subject,resources,&reason,m_config->downloader.selected!="builtin"&&m_config->downloader.selected!="aria2"&&!m_rpc->enabled(m_config->downloader.selected),range);
+    if(!hasRoomFor(plans))return;
     int added=0;for(const auto &plan:plans)if(reserve(subject,plan))++added;
     if(added){emit queued();processNext();}
     else if(!reason.isEmpty())emit information(reason);
@@ -390,6 +394,25 @@ void AnimeDownloads::restorePending()
         if(m_library->put(item,&message))m_pending.enqueue(item.key);else emit error(message);
     }
     synchronize();processNext();
+}
+
+bool AnimeDownloads::hasRoomFor(const QVector<PlannedDownload> &plans)
+{
+    // Sizes come from the sites. Unknown sizes and partial batches (only some files
+    // selected) are left out, so this only stops what clearly cannot fit.
+    qint64 needed=0;
+    for(const auto &plan:plans)if(plan.onlyEpisodes.isEmpty()&&plan.resource.fileSize>0)needed+=plan.resource.fileSize;
+    if(needed<=0)return true;
+    QString path=m_config->engine.savePath;
+    while(!path.isEmpty()&&!QFileInfo(path).isDir()){const QString up=QFileInfo(path).absolutePath();if(up==path)break;path=up;}
+    const QStorageInfo drive(path);
+    if(!drive.isValid()||drive.bytesAvailable()<0)return true;
+    constexpr qint64 margin=512LL*1024*1024;   // room for partial files and the system
+    if(drive.bytesAvailable()>=needed+margin)return true;
+    const QLocale locale;
+    emit error(QStringLiteral("下载目录所在磁盘空间不足：这些资源约需 %1，剩余 %2。请清理磁盘，或在「偏好设置 → 下载」更换下载目录。")
+        .arg(locale.formattedDataSize(needed),locale.formattedDataSize(drive.bytesAvailable())));
+    return false;
 }
 
 AnimeDownloads::MoveSummary AnimeDownloads::planMove(const QString &oldRoot) const

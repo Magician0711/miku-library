@@ -1,4 +1,4 @@
-# Anime Nexus - Copyright (C) 2026 Magician0711
+# Miku Library - Copyright (C) 2026 Magician0711
 # SPDX-License-Identifier: GPL-3.0-only
 
 """Archive old work before cleanup. Never deletes source files."""
@@ -8,10 +8,10 @@ import datetime, hashlib, json, zipfile
 root=Path(__file__).resolve().parents[2]
 out=root/'archives';out.mkdir(exist_ok=True)
 stamp=datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-archive=out/f'AnimeNexus-Legacy-{stamp}.zip'
-targets=[root/'anime_nexus',root/'backups',*list((root/'release_packages').iterdir()),
+archive=out/f'MikuLibrary-Legacy-{stamp}.zip'
+targets=[root/'miku_library',root/'backups',*list((root/'release_packages').iterdir()),
          *(root/name for name in ('anime_sites_README.md','anime_sites.json','anime_sites.jsonc','vcpkg_libtorrent.log')),
-         root/'anime_nexus_cpp/tools/legacy_package_helper.py']
+         root/'miku_library/tools/legacy_package_helper.py']
 targets=[p.resolve() for p in targets if p.exists()]
 files=[]
 for target in targets:

@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "Database.h"
@@ -39,7 +39,7 @@ QStringList stringList(const QVariant &value)
 
 Database::Database(const QString &path)
     : m_path(path)
-    , m_connectionName(QStringLiteral("anime_nexus_%1").arg(reinterpret_cast<quintptr>(this), 0, 16))
+    , m_connectionName(QStringLiteral("miku_library_%1").arg(reinterpret_cast<quintptr>(this), 0, 16))
 {
 }
 

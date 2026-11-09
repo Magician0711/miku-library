@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -8,6 +8,7 @@
 
 #include <QJsonObject>
 #include <QObject>
+#include <QSet>
 #include <QSet>
 #include <QString>
 #include <QVector>
@@ -83,6 +84,9 @@ private:
     bool saveMagnetTorrent(const lt::torrent_handle &handle, QString *error);
     void appendEntry(const Entry &entry);
     void removeEntry(const QString &infoHash);
+    // Runs once libtorrent has deleted a task's data: the saved .torrent goes too,
+    // then every folder left empty, up to but never including the download root.
+    void cleanUpDeleted(const QString &torrentFile, const QString &savePath);
     void updateEntryPaused(const QString &infoHash, bool paused);
     void saveState() const;
     void loadState();
@@ -100,8 +104,13 @@ private:
     QVector<DownloadFile> filesOf(const lt::torrent_handle &handle, const QString &savePath, bool stopped) const;
     QSet<QString> m_metadataPending;
     QHash<QString,Entry> m_readds;
+    QHash<QString,Entry> m_deleting;   // removed with their files, waiting for libtorrent
     QHash<QString, QString> m_saveErrors;
     QHash<QString,QString> m_trackerWarnings;
     QString m_networkWarning;
+    // Ports the system has refused since the engine started; tried again on the next start.
+    QSet<int> m_refusedPorts;
+    int m_fallbackPort = 0;
+    int portToListenOn(const QString &bindAddress);
     bool m_started = false;
 };

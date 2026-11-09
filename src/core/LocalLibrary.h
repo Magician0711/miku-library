@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -43,6 +43,7 @@ struct DownloadPreference {
     QString subtitleType;     // "internal", "hardcoded", ...; empty = any
     int ignoredThrough = 0;   // update notices up to this episode were dismissed
     bool follow = true;       // include in the update check
+    bool autoDownload = false; // download new episodes without asking
     bool matches(const ResourceResult &resource) const;
 };
 
@@ -101,6 +102,8 @@ public:
 signals:
     void changed();
     void storageError(const QString &message);
+    // A record turned complete during this run (not on load).
+    void downloadCompleted(const LibraryItem &item);
 
 private:
     QSet<QString> availableEpisodes(const LibraryItem &item) const;

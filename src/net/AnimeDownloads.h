@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -61,6 +61,8 @@ private:
     QSet<QString> m_activeKeys;
     QStringList m_errors;
     void finishMoveStep();
+    // False (and an error) when the download drive clearly cannot hold these files.
+    bool hasRoomFor(const QVector<PlannedDownload> &plans);
     QHash<QString,QPair<QString,QString>> m_pendingMoves;   // hash -> old, new save path
     int m_fileMoves=0;
     int m_moved=0;

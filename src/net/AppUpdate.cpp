@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AppUpdate.h"
@@ -28,7 +28,7 @@ void AppUpdate::check()
     if (m_running)
         return;
     m_running = true;
-    auto *reply = m_http->get(QUrl(QStringLiteral("https://api.github.com/repos/Magician0711/anime-nexus/releases/latest")), 15000);
+    auto *reply = m_http->get(QUrl(QStringLiteral("https://api.github.com/repos/Magician0711/miku-library/releases/latest")), 15000);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         m_running = false;

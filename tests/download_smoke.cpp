@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "net/TorrentEngine.h"
@@ -14,6 +14,8 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -225,18 +227,49 @@ int main(int argc, char **argv)
         "automatic networking clears fixed interface binding and listens on IPv4 and IPv6");
     engine.applySettings(settings);
     check(engine.networkStatus().value("outgoing_interfaces").toString()=="127.0.0.1","explicit manual interface remains supported");
+    {
+        // Held exclusively, so the bind is refused the way a port reserved by Windows is.
+        QTcpServer holder;
+        check(holder.listen(QHostAddress::LocalHost),"a port can be held for the test");
+        const int held=holder.serverPort();
+        auto occupied=settings;occupied.listenPort=held;
+        engine.applySettings(occupied);
+        const auto moved=[&]{const int port=engine.networkStatus().value("listen_port").toInt();return port>0&&port!=held;};
+        check(waitUntil(moved),"a refused listen port moves to one the system allows");
+        check(engine.networkStatus().value("warning").toString().isEmpty(),"moving off a refused port is not reported as a failure");
+        engine.applySettings(settings);
+        check(waitUntil([&]{return engine.networkStatus().value("listen_port").toInt()>0;}),"the engine keeps listening after the port setting changes back");
+
+        // A port Windows has reserved answers differently from one in use. Which ports
+        // are reserved depends on the machine, so this only runs where there are some.
+        QProcess netsh;
+        netsh.start("netsh",{"interface","ipv4","show","excludedportrange","protocol=tcp"});
+        netsh.waitForFinished(5000);
+        const auto range=QRegularExpression("(?m)^\\s*(\\d+)\\s+(\\d+)\\s*$").match(QString::fromLocal8Bit(netsh.readAllStandardOutput()));
+        if(range.hasMatch()) {
+            const int reserved=range.captured(1).toInt();
+            auto refused=settings;refused.listenPort=reserved;
+            engine.applySettings(refused);
+            check(waitUntil([&]{const int port=engine.networkStatus().value("listen_port").toInt();return port>0&&port!=reserved;}),"a port reserved by Windows moves to one the system allows");
+            check(!engine.networkStatus().value("listen_interfaces").toString().endsWith(QString(":%1").arg(reserved)),"the reserved port is given up");
+            check(engine.networkStatus().value("warning").toString().isEmpty(),"a reserved port is not reported as a failure");
+            engine.applySettings(settings);
+        }
+    }
     const QString destination=sandbox.path()+QStringLiteral("/下载目录");
     bool done=false,ok=false,savedBeforeAdd=false;
     engine.addTorrent(QString::fromLatin1(base+"/file.torrent"),destination,[&](bool success,QString message) {
         ok=success; error=message; done=true;
-        savedBeforeAdd=!QDir(destination).entryList({"*.torrent"},QDir::Files).isEmpty();
+        savedBeforeAdd=!QDir(destination).entryList({"*.torrent"},QDir::Files|QDir::Hidden).isEmpty();
     });
     check(waitUntil([&]{return done;})&&ok,"HTTP torrent is added");
     if (!ok) qWarning().noquote()<<error;
     check(savedBeforeAdd,"torrent saved in chosen folder before success");
-    const auto files=QDir(destination).entryList({"*.torrent"},QDir::Files);
+    const auto files=QDir(destination).entryList({"*.torrent"},QDir::Files|QDir::Hidden);
     check(files.size()==1 && readFile(QDir(destination).filePath(files.value(0)))==torrent,
         "downloaded torrent preserves original bytes");
+    check(QFileInfo(QDir(destination).filePath(files.value(0))).isHidden()&&QDir(destination).entryList({"*.torrent"},QDir::Files).isEmpty(),
+        "saved torrent is a hidden file");
     const bool httpComplete=waitUntil([&]{return readFile(destination+"/"+fileName)==payload;});
     check(httpComplete,"HTTP task automatically downloads payload from local seeder");
     if(!httpComplete)diagnose();
@@ -261,7 +294,7 @@ int main(int argc, char **argv)
     check(done&&ok,"magnet task is added");
     bool payloadBeforeTorrent=false;
     const bool magnetComplete=waitUntil([&] {
-        const bool saved=!QDir(magnetDestination).entryList({"*.torrent"},QDir::Files).isEmpty();
+        const bool saved=!QDir(magnetDestination).entryList({"*.torrent"},QDir::Files|QDir::Hidden).isEmpty();
         const auto tasks=engine.listTorrents();
         if (!tasks.isEmpty()&&tasks[0].downloaded>0&&!saved) payloadBeforeTorrent=true;
         return saved&&readFile(magnetDestination+"/"+fileName)==payload;
@@ -269,7 +302,7 @@ int main(int argc, char **argv)
     check(magnetComplete,"magnet metadata is saved and payload auto starts");
     if(!magnetComplete)diagnose();
     check(!payloadBeforeTorrent,"magnet payload waits until torrent file is saved");
-    const auto magnetFiles=QDir(magnetDestination).entryList({"*.torrent"},QDir::Files);
+    const auto magnetFiles=QDir(magnetDestination).entryList({"*.torrent"},QDir::Files|QDir::Hidden);
     bool matches=false;
     if (!magnetFiles.isEmpty()) {
         try { auto p=lt::load_torrent_file(QDir(magnetDestination).filePath(magnetFiles[0]).toStdString());
@@ -296,7 +329,72 @@ int main(int argc, char **argv)
     engine.stop();engine.start(&error);
     check(waitUntil([&]{const auto t=engine.listTorrents();return t.size()==1&&t[0].status==DownloadStatus::Completed;}),
         "automatic completion stop survives restart");
+    settings.stopOnCompletion=false;engine.applySettings(settings);
+    check(waitUntil([&]{const auto t=engine.listTorrents();return t.size()==1&&t[0].status==DownloadStatus::Seeding;}),
+        "turning the stop off returns stopped tasks to seeding");
     engine.remove(hash);waitUntil([&]{return engine.listTorrents().isEmpty();});
+
+    {
+        // Deleting with files clears what the task created, and nothing else.
+        const QString libraryRoot=sandbox.path()+QStringLiteral("/番剧库");
+        auto rooted=settings;rooted.savePath=libraryRoot;engine.applySettings(rooted);
+        QStringList engineErrors;
+        const auto errorWatch=QObject::connect(&engine,&TorrentEngine::engineError,&app,[&](const QString &message){engineErrors<<message;});
+        auto download=[&](const QString &folder) {
+            done=false;ok=false;
+            engine.addTorrent(QString::fromLatin1(base+"/file.torrent"),folder,[&](bool success,QString message){done=true;ok=success;error=message;});
+            return waitUntil([&]{return done&&ok&&readFile(folder+"/"+fileName)==payload;},25000);
+        };
+        auto torrents=[](const QString &folder){return QDir(folder).entryList({"*.torrent"},QDir::Files|QDir::Hidden);};
+        auto removed=[&](const QString &folder) {
+            return waitUntil([&]{return engine.listTorrents().isEmpty()&&torrents(folder).isEmpty()&&!QFile::exists(folder+"/"+fileName);});
+        };
+        auto write=[](const QString &path){QDir().mkpath(QFileInfo(path).absolutePath());QFile file(path);return file.open(QIODevice::WriteOnly)&&file.write("x")==1;};
+
+        const QString nested=libraryRoot+QStringLiteral("/番剧甲/字幕组/第 1 季");
+        check(download(nested),"nested task downloads");
+        engine.remove(hash,true);
+        check(removed(nested)&&waitUntil([&]{return !QDir(libraryRoot+QStringLiteral("/番剧甲")).exists();})&&QDir(libraryRoot).exists(),
+            "deleting removes video, torrent and empty folders but keeps the download root");
+
+        const QString shared=libraryRoot+QStringLiteral("/番剧乙/字幕组/第 1 季");
+        check(write(libraryRoot+QStringLiteral("/番剧乙/笔记.txt")),"user file sits beside the task folders");
+        check(download(shared),"task beside a user file downloads");
+        engine.remove(hash,true);
+        check(removed(shared)&&waitUntil([&]{return !QDir(libraryRoot+QStringLiteral("/番剧乙/字幕组")).exists();})
+            &&QFile::exists(libraryRoot+QStringLiteral("/番剧乙/笔记.txt")),"folder walk stops at a folder holding the user's file");
+
+        const QString occupied=libraryRoot+QStringLiteral("/番剧丙/第 1 季");
+        check(write(occupied+QStringLiteral("/字幕.ass")),"user file sits in the task folder");
+        check(download(occupied),"task in an occupied folder downloads");
+        engine.remove(hash,true);
+        check(removed(occupied)&&QFile::exists(occupied+QStringLiteral("/字幕.ass")),"other files in the task folder survive");
+
+        const QString outside=sandbox.path()+QStringLiteral("/自选目录/番剧丁");
+        check(download(outside),"task outside the download root downloads");
+        engine.remove(hash,true);
+        check(removed(outside)&&QDir(outside).exists(),"folders outside the download root are left in place");
+
+        const QString kept=libraryRoot+QStringLiteral("/番剧戊");
+        check(download(kept),"task to keep downloads");
+        engine.remove(hash,false);
+        check(waitUntil([&]{return engine.listTorrents().isEmpty();})&&readFile(kept+"/"+fileName)==payload&&torrents(kept).size()==1,
+            "removing the task alone keeps video and torrent");
+
+        const QString locked=libraryRoot+QStringLiteral("/番剧己");
+        check(download(locked),"task with a file in use downloads");
+        {
+            engine.pause(hash);
+            waitUntil([&]{const auto t=engine.listTorrents();return t.size()==1&&t[0].status==DownloadStatus::Paused;});
+            QFile inUse(locked+"/"+fileName);inUse.open(QIODevice::ReadOnly);
+            engine.remove(hash,true);
+            check(waitUntil([&]{return engineErrors.join("\n").contains(QStringLiteral("部分文件没有删除"));})&&QFile::exists(locked+"/"+fileName),
+                "a file that cannot be deleted is reported");
+        }
+        waitUntil([&]{return engine.listTorrents().isEmpty();});
+        QObject::disconnect(errorWatch);
+        engine.applySettings(settings);
+    }
 
     const QString selective=sandbox.path()+"/selective";done=false;ok=false;
     engine.addTorrentTracked(QString::fromLatin1(base+"/batch"),selective,[&](bool success,QString,QString){done=true;ok=success;},{"2"});
@@ -375,6 +473,19 @@ int main(int argc, char **argv)
         check(!QDir(oldRoot+"/Leftover").exists(),"folders emptied by the move are removed");
         check(waitUntil([&]{downloads.synchronize();return library.localReleases(42).size()==2;}),"moved videos stay playable");
     }
+    {
+        // A download the drive clearly cannot hold is refused before anything is reserved.
+        QStringList spaceErrors;
+        auto connection=QObject::connect(&downloads,&AnimeDownloads::error,&app,[&](const QString &e){spaceErrors<<e;});
+        ResourceResult huge;huge.title="[Group C] Huge - 01 [1080p]";huge.releaseGroup="Group C";huge.tags=parseTitle(huge.title);
+        huge.infoHash=QString(40,QLatin1Char('c'));huge.torrentUrl=QString::fromLatin1(base+"/huge.torrent");huge.fileSize=1LL<<55;
+        AnimeSubject other=subject;other.bangumiId=44;
+        const auto before=library.items().size();
+        downloads.downloadOne(other,huge);
+        check(spaceErrors.size()==1&&spaceErrors.first().contains(QStringLiteral("磁盘空间不足"))&&library.items().size()==before,
+              "downloads that cannot fit are refused with a reason");
+        QObject::disconnect(connection);
+    }
     engine.remove(hash);engine.remove(batchHash);waitUntil([&]{return engine.listTorrents().isEmpty();});
 
     {
@@ -447,7 +558,7 @@ int main(int argc, char **argv)
     const QString badDestination=sandbox.path()+"/invalid";
     engine.addTorrent(QString::fromLatin1(base+"/bad"),badDestination,[&](bool success,QString){ok=success;done=true;});
     check(waitUntil([&]{return done;})&&!ok && engine.listTorrents().isEmpty()
-        &&QDir(badDestination).entryList({"*.torrent"},QDir::Files).isEmpty(),"invalid response creates neither torrent nor task");
+        &&QDir(badDestination).entryList({"*.torrent"},QDir::Files|QDir::Hidden).isEmpty(),"invalid response creates neither torrent nor task");
     const QString blocked=sandbox.path()+"/blocked";
     QFile block(blocked);block.open(QIODevice::WriteOnly);block.write("occupied");block.close();
     done=false;ok=true;

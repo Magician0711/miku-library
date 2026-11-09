@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -14,7 +14,7 @@ class HttpClient;
 class AppUpdate : public QObject {
     Q_OBJECT
 public:
-    static constexpr const char *kReleasesPage = "https://github.com/Magician0711/anime-nexus/releases";
+    static constexpr const char *kReleasesPage = "https://github.com/Magician0711/miku-library/releases";
 
     explicit AppUpdate(HttpClient *http, QObject *parent = nullptr);
     void check();

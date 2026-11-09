@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -26,7 +26,7 @@ struct EngineSettings {
     int activeSeeds = 0;         // 0 = unlimited
     int activeLimit = 0;         // 0 = unlimited
     bool queueing = true;
-    bool stopOnCompletion = true;
+    bool stopOnCompletion = false;   // keep seeding unless the user chooses otherwise
     int sourceStallSeconds = 90; // Only switch before any payload is received; 0 disables.
 
     QJsonObject toJson() const;

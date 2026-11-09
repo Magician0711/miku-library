@@ -1,11 +1,14 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "core/LocalLibrary.h"
+#include "core/Backup.h"
 #include "core/TitleParser.h"
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QJsonObject>
+#include <QJsonDocument>
 #include <QDir>
 #include <QDebug>
 
@@ -159,6 +162,32 @@ int main(int argc,char **argv) {
         auto quiet=follow.preference(500);quiet.follow=false;follow.setPreference(500,quiet);
         LocalLibrary muted(followPath);muted.load();
         check(!muted.preference(500).follow&&muted.updateTargets().isEmpty(),"anime with update notices turned off are skipped and stay off");
+        auto automatic=muted.preference(500);automatic.follow=true;automatic.autoDownload=true;muted.setPreference(500,automatic);
+        LocalLibrary reloaded(followPath);reloaded.load();
+        check(reloaded.preference(500).autoDownload&&reloaded.preference(500).follow,"auto download choice is saved per anime");
+    }
+    {
+        // Backup: settings, sites, records and follows survive a round trip; foreign files are refused.
+        QTemporaryDir source,target;
+        auto put=[](const QString &path,const QByteArray &data){QFile f(path);f.open(QIODevice::WriteOnly);f.write(data);};
+        put(source.filePath("config.json"),R"({"appearance":"dark","close_action":"tray"})");
+        put(source.filePath("anime_sites.json"),R"({"anime_torrent_sites":[]})");
+        QFile::copy(dir.filePath("follow.json"),source.filePath("local-library.json"));
+        const auto backup=Backup::create(source.path(),{11,22});
+        const QString file=source.filePath("backup.json");
+        check(Backup::save(backup,file),"backup is written");
+        QJsonObject loaded;QString error;
+        check(Backup::load(file,&loaded)&&Backup::summary(loaded).startsWith(QStringLiteral("2 部追番")),"backup reads back with a summary");
+        QVector<int> followed;
+        check(Backup::restore(loaded,target.path(),&followed)&&followed==QVector<int>({11,22}),"restore returns the followed anime");
+        LocalLibrary restored(target.filePath("local-library.json"));
+        check(restored.load()&&restored.preference(500).autoDownload&&!restored.items().isEmpty(),"restored records and preferences load");
+        QFile config(target.filePath("config.json"));config.open(QIODevice::ReadOnly);
+        check(QJsonDocument::fromJson(config.readAll()).object().value("close_action").toString()=="tray","restored settings keep their values");
+        put(source.filePath("other.json"),R"({"downloads":[]})");
+        check(!Backup::load(source.filePath("other.json"),nullptr,&error)&&!error.isEmpty(),"files that are not backups are refused");
+        auto newer=backup;newer["version"]=Backup::kVersion+1;Backup::save(newer,file);
+        check(!Backup::load(file,nullptr,&error),"backups from a newer version are refused");
     }
     check(LocalLibrary::safeFolderName("CON")=="_CON"&&LocalLibrary::safeFolderName("../A:B?*").contains("_")
         &&!LocalLibrary::safeFolderName("../A:B?*").contains('/'),"Windows folder names are safe");

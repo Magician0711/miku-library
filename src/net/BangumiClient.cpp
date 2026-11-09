@@ -1,7 +1,10 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "BangumiClient.h"
+#include <QSaveFile>
+#include <QFile>
+#include <QDir>
 
 #include "HttpClient.h"
 
@@ -55,6 +58,16 @@ bool isLatin(const QString &text)
     return true;
 }
 
+// Bangumi stores names HTML-escaped.
+QString plainName(const QJsonValue &value)
+{
+    QString name = value.toString();
+    name.replace(QStringLiteral("&lt;"), QStringLiteral("<")).replace(QStringLiteral("&gt;"), QStringLiteral(">"))
+        .replace(QStringLiteral("&quot;"), QStringLiteral("\"")).replace(QStringLiteral("&#39;"), QStringLiteral("'"))
+        .replace(QStringLiteral("&amp;"), QStringLiteral("&"));
+    return name;
+}
+
 int yearFromDate(const QString &date)
 {
     if (date.size() < 4)
@@ -68,8 +81,8 @@ AnimeSubject parseSubjectV0(const QJsonObject &data)
 {
     AnimeSubject subject;
     subject.bangumiId = data.value(QStringLiteral("id")).toInt();
-    subject.nameJp = data.value(QStringLiteral("name")).toString();
-    subject.nameCn = data.value(QStringLiteral("name_cn")).toString();
+    subject.nameJp = plainName(data.value(QStringLiteral("name")));
+    subject.nameCn = plainName(data.value(QStringLiteral("name_cn")));
     subject.summary = data.value(QStringLiteral("summary")).toString();
     subject.airDate = data.value(QStringLiteral("date")).toString();
     subject.year = yearFromDate(subject.airDate);
@@ -115,8 +128,8 @@ AnimeSubject parseCalendarItem(const QJsonObject &item, int weekday)
 {
     AnimeSubject subject;
     subject.bangumiId = item.value(QStringLiteral("id")).toInt();
-    subject.nameCn = item.value(QStringLiteral("name_cn")).toString();
-    subject.nameJp = item.value(QStringLiteral("name")).toString();
+    subject.nameCn = plainName(item.value(QStringLiteral("name_cn")));
+    subject.nameJp = plainName(item.value(QStringLiteral("name")));
     subject.summary = item.value(QStringLiteral("summary")).toString();
     subject.airDate = item.value(QStringLiteral("air_date")).toString();
     subject.year = yearFromDate(subject.airDate);
@@ -213,33 +226,55 @@ void BangumiClient::getSubject(int id, std::function<void(AnimeSubject, QString)
     });
 }
 
-void BangumiClient::calendar(std::function<void(QVector<QPair<int, QVector<AnimeSubject>>>, QString)> callback)
+namespace {
+BangumiClient::CalendarDays parseCalendar(const QJsonArray &array)
 {
-    auto *reply = m_http->get(endpoint(QStringLiteral("/calendar")), 15000);
-    connect(reply, &QNetworkReply::finished, this, [reply, callback = std::move(callback)]() mutable {
-        const QString error = HttpClient::replyError(reply);
-        if (!error.isEmpty()) {
-            reply->deleteLater();
-            callback({}, error);
-            return;
-        }
+    BangumiClient::CalendarDays days;
+    for (const auto &value : array) {
+        const auto day = value.toObject();
+        const int weekday = day.value(QStringLiteral("weekday")).toObject().value(QStringLiteral("id")).toInt();
+        QVector<AnimeSubject> items;
+        for (const auto &item : day.value(QStringLiteral("items")).toArray())
+            items.push_back(parseCalendarItem(item.toObject(), weekday));
+        days.push_back({weekday, items});
+    }
+    return days;
+}
+}
+
+void BangumiClient::calendar(std::function<void(CalendarDays, QString, QDateTime)> callback)
+{
+    m_http->getWithRetry(endpoint(QStringLiteral("/calendar")), 15000, this, [this, callback = std::move(callback)](QNetworkReply *reply) mutable {
+        const QString cachePath = m_cacheDir.isEmpty() ? QString() : QDir(m_cacheDir).filePath(QStringLiteral("calendar-cache.json"));
+        QString error = HttpClient::replyError(reply);
         bool ok = false;
-        const auto doc = HttpClient::json(reply, &ok);
+        const auto doc = error.isEmpty() ? HttpClient::json(reply, &ok) : QJsonDocument();
         reply->deleteLater();
-        if (!ok || !doc.isArray()) {
-            callback({}, QStringLiteral("Bangumi 放送表返回了无效 JSON"));
+        if (error.isEmpty() && (!ok || !doc.isArray()))
+            error = QStringLiteral("Bangumi 放送表返回了无效 JSON");
+        if (error.isEmpty()) {
+            if (!cachePath.isEmpty()) {
+                QSaveFile file(cachePath);
+                const auto data = QJsonDocument(QJsonObject{
+                    {QStringLiteral("fetched_at"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+                    {QStringLiteral("calendar"), doc.array()}}).toJson(QJsonDocument::Compact);
+                if (file.open(QIODevice::WriteOnly) && file.write(data) == data.size()) file.commit();
+            }
+            callback(parseCalendar(doc.array()), {}, {});
             return;
         }
-        QVector<QPair<int, QVector<AnimeSubject>>> days;
-        for (const auto &value : doc.array()) {
-            const auto day = value.toObject();
-            const int weekday = day.value(QStringLiteral("weekday")).toObject().value(QStringLiteral("id")).toInt();
-            QVector<AnimeSubject> items;
-            for (const auto &item : day.value(QStringLiteral("items")).toArray())
-                items.push_back(parseCalendarItem(item.toObject(), weekday));
-            days.push_back({weekday, items});
+        // Offline or blocked: fall back to the last schedule that did load.
+        QFile cache(cachePath);
+        if (!cachePath.isEmpty() && cache.open(QIODevice::ReadOnly)) {
+            const auto saved = QJsonDocument::fromJson(cache.readAll()).object();
+            const auto fetched = QDateTime::fromString(saved.value(QStringLiteral("fetched_at")).toString(), Qt::ISODate);
+            const auto days = parseCalendar(saved.value(QStringLiteral("calendar")).toArray());
+            if (fetched.isValid() && !days.isEmpty()) {
+                callback(days, {}, fetched.toLocalTime());
+                return;
+            }
         }
-        callback(days, {});
+        callback({}, error, {});
     });
 }
 

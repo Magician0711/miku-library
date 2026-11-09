@@ -1,4 +1,4 @@
-// Anime Nexus - Copyright (C) 2026 Magician0711
+// Miku Library - Copyright (C) 2026 Magician0711
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -17,7 +17,7 @@ public:
     explicit InstanceGuard(const QString &directory,QObject *parent=nullptr)
         :QObject(parent),m_lock(QDir(directory).filePath("instance.lock")) {
         QDir().mkpath(directory);
-        m_name="AnimeNexus-"+QString::fromLatin1(QCryptographicHash::hash(QDir(directory).canonicalPath().toCaseFolded().toUtf8(),QCryptographicHash::Sha256).toHex().left(32));
+        m_name="MikuLibrary-"+QString::fromLatin1(QCryptographicHash::hash(QDir(directory).canonicalPath().toCaseFolded().toUtf8(),QCryptographicHash::Sha256).toHex().left(32));
     }
     enum Result {Primary,Forwarded,Busy};
     Result acquire(const QStringList &arguments) {
@@ -41,13 +41,17 @@ public:
                 const auto doc=QJsonDocument::fromJson(bytes.left(bytes.indexOf('\n')));if(!doc.isArray()){socket->abort();return;}
                 QStringList args;for(const auto &arg:doc.array())if(arg.isString())args.append(arg.toString());
                 socket->write("OK");socket->flush();socket->disconnectFromServer();
-                if(onArguments)onArguments(args);else m_pending.append(args);
+                // After the answer has gone out: the other copy is waiting for it, and bringing
+                // this window back can keep the event loop busy for a while.
+                QTimer::singleShot(0,this,[this,args]{if(onArguments)onArguments(args);else m_pending.append(args);});
             });
             connect(socket,&QLocalSocket::disconnected,socket,&QObject::deleteLater);
             QTimer::singleShot(5000,socket,[socket]{socket->disconnectFromServer();});
         }});
         return Primary;
     }
+    // Lets a freshly started copy (e.g. a restart after restoring a backup) take over.
+    void release(){m_server.close();m_lock.unlock();}
     void ready(){const auto pending=m_pending;m_pending.clear();for(const auto &args:pending)if(onArguments)onArguments(args);}
     std::function<void(QStringList)> onArguments;
 private:
