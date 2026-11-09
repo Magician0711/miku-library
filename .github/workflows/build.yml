@@ -52,9 +52,8 @@ jobs:
         working-directory: build
         run: |
           $env:PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin;$env:PATH"
-          $tests = "ControlsSmoke","DetailLibrarySmoke","DirectorySmoke","DownloadSmoke","ExternalDownloaderSmoke",
-                   "LocalLibrarySmoke","OptimizationSmoke","RpcSmoke","SearchInputSmoke","SettingsLimitsSmoke",
-                   "UiAuditSmoke","WindowSmoke"
+          $tests = "DetailLibrarySmoke","DirectorySmoke","DownloadSmoke","ExternalDownloaderSmoke","LocalLibrarySmoke",
+                   "OptimizationSmoke","QuickUiSmoke","RpcSmoke","SettingsLimitsSmoke"
           $failed = @()
           foreach ($test in $tests) {
             $start = Get-Date
