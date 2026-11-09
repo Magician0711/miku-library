@@ -653,3 +653,9 @@ Release 全量构建通过。12 组冒烟测试共 292 项通过，0 项失败�
 - 程序名、窗口、托盘、提示文字和文档都改为 Miku Library，新 Logo 用于侧栏、托盘、任务栏和 exe 图标；程序文件改为 `MikuLibrary.exe`。
 - 旧名称已从代码中完全移除：数据目录 `~/.miku-library`、数据库 `miku_library.db`、日志 `miku_library.log`、环境变量前缀 `MIKU_LIBRARY_`、QML 模块 `MikuLibrary`、备份格式标识 `miku-library-backup`。默认下载文件夹为系统「下载」下的 `library`。更新检查指向 `Magician0711/miku-library`，GitHub 仓库需要同名。
 - 版本号定为 1.0.0。
+
+## 1.0.0 之后：清理遗留文件
+
+- 删除没有引用的 `PageHeader.qml`、Widgets 时代的 `assets/icons`、一次性脚本 `tools/archive_legacy.py` 和旧界面预览图。
+- README 改用新 Logo，删除旧的 `docs/logo.svg`。
+- CI 的测试名单换成现有的 9 组。

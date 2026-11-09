@@ -91,7 +91,7 @@ Miku Library 面向希望按番剧、字幕组发现和管理视频的桌面用�
 
 135 项布局检查包括窗口实际尺寸、页面头高度、六个设置分区控件可见宽度、文字对比度与两个字幕组的展示。
 已人工查看：首页、搜索、追番、下载、站点、设置、详情与资源区截图，以及 200% DPI 设置布局。
-验证记录：`build/apple-ui-verification.json`。预览图：`docs/ui-preview-20261106/`；图中数据是本地审核样本，不代表实时站点结果，下载引擎未启动。
+验证记录：`build/apple-ui-verification.json`。
 
 可运行程序：`dist/MikuLibrary/MikuLibrary.exe`。保持其所在目录的 DLL 与插件完整。
 

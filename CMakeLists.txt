@@ -139,7 +139,6 @@ qt_add_qml_module(MikuQml
         qml/Segmented.qml
         qml/NxMenu.qml
         qml/NxMenuItem.qml
-        qml/PageHeader.qml
         qml/EmptyState.qml
         qml/PosterCard.qml
         qml/PosterGrid.qml

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="72" alt="Miku Library">
+<img src="assets/logo.png" width="72" alt="Miku Library">
 
 # Miku Library
 
