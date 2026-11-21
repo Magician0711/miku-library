@@ -12,7 +12,7 @@ Window {
     height: guide ? Math.min(screen.height * 0.9 / Screen.devicePixelRatio, stack.implicitHeight + 124) : 300
     title: guide ? qsTr("欢迎使用 Miku Library") : qsTr("需要更换下载目录")
     color: "transparent"
-    flags: (Chrome.systemButtons ? Qt.WindowTitleHint | Qt.NoTitleBarBackgroundHint : Qt.FramelessWindowHint)
+    flags: (Chrome.systemButtons ? Qt.WindowTitleHint : Qt.FramelessWindowHint)
            | Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint
     property int step: 0
     visible: false

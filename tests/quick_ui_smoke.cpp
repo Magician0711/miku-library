@@ -493,7 +493,7 @@ int main(int argc, char **argv)
 #elif defined(Q_OS_MACOS)
     {
         // The system's title bar, transparent: its buttons, nothing drawn over them.
-        check(window->flags().testFlag(Qt::NoTitleBarBackgroundHint) && !window->flags().testFlag(Qt::FramelessWindowHint),
+        check(window->flags().testFlag(Qt::WindowTitleHint) && !window->flags().testFlag(Qt::FramelessWindowHint),
               "the window keeps the system title bar for its buttons");
         auto *buttons = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("WindowButtons"); });
         check(buttons && !buttons->isVisible(), "the drawn window buttons give way to the system's");

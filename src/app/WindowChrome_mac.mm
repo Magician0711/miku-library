@@ -17,8 +17,8 @@ NSWindow *nativeWindow(QWindow *window)
 
 namespace MacWindow {
 
-// The window flags (Qt::NoTitleBarBackgroundHint) already run the content under a
-// transparent title bar; the title itself would sit over the sidebar, so it goes.
+// The content runs under a transparent title bar that keeps the system's buttons (Qt 6.8
+// has no window flag for this); the title itself would sit over the page, so it goes.
 void prepare(QWindow *window)
 {
     NSWindow *ns = nativeWindow(window);

@@ -10,8 +10,9 @@ Window {
     minimumWidth: 900; minimumHeight: 620
     title: "Miku Library"
     color: "transparent"
-    // macOS keeps its title bar, transparent, for the system's own window buttons.
-    flags: (Chrome.systemButtons ? Qt.WindowTitleHint | Qt.NoTitleBarBackgroundHint : Qt.FramelessWindowHint)
+    // macOS keeps its title bar for the system's own window buttons; WindowChrome makes it
+    // transparent natively (Qt 6.8 has no flag for that).
+    flags: (Chrome.systemButtons ? Qt.WindowTitleHint : Qt.FramelessWindowHint)
            | Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint
 
     readonly property var pageNames: [qsTr("本季放送"), qsTr("搜索番剧"), qsTr("我的追番"), qsTr("下载任务"), qsTr("资源站点"), qsTr("偏好设置"), qsTr("番剧详情"), qsTr("正在播放")]
