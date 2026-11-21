@@ -42,6 +42,18 @@ jobs:
 
       - uses: ilammy/msvc-dev-cmd@v1
 
+      # Motion interpolation that needs nothing installed. assemble_vapoursynth.py checks
+      # each official archive against its published hash before using it.
+      - name: Motion interpolation set
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'vapoursynth-archives'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $urls = 'https://github.com/vapoursynth/vapoursynth/releases/download/R82/VapourSynth64-Portable-R82.zip',
+                  'https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip',
+                  'https://files.pythonhosted.org/packages/28/f5/1697a4c7238f442a24982a3e5b7b4cbc54d411b40bf3f83b955ab0ed3cc2/vapoursynth_mvtools-29-py3-none-win_amd64.whl'
+          foreach ($url in $urls) { Invoke-WebRequest $url -OutFile (Join-Path $dir ($url -split '/')[-1]) }
+          python tools/assemble_vapoursynth.py $dir
+
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -50,7 +62,12 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          cmake --build build --parallel 2>&1 | Tee-Object -FilePath build-output.txt
+          if ($LASTEXITCODE -ne 0) {
+            Select-String -Path build-output.txt -Pattern ' error |error:|FAILED' | Select-Object -First 12 | ForEach-Object { Write-Host "::error::$($_.Line)" }
+            exit 1
+          }
 
       - name: Smoke tests
         working-directory: build
@@ -69,7 +86,7 @@ jobs:
             Write-Host "$test exit=$($process.ExitCode) passed=$passed"
             if ($process.ExitCode -ne 0) {
               $failed += $test
-              if ($log) { Select-String -Path $log.FullName -Pattern ' FAIL$' | ForEach-Object { Write-Host "  $($_.Line)" } }
+              if ($log) { Select-String -Path $log.FullName -Pattern ' FAIL$' | ForEach-Object { Write-Host "::error title=$test::$($_.Line)" } }
             }
           }
           if ($failed) { Write-Error "Failed: $($failed -join ', ')"; exit 1 }
@@ -104,7 +121,14 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set +e
+          cmake --build build --parallel 2>&1 | tee build-output.txt
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E 'error:|FAILED' build-output.txt | head -12 | while IFS= read -r line; do echo "::error::$line"; done
+            exit "$code"
+          fi
 
       # The interface suite needs a display and OpenGL: Xvfb with Mesa's software renderer.
       - name: Smoke tests
@@ -127,18 +151,10 @@ jobs:
           name: smoke-test-logs-linux
           path: build/*.log
 
-  # The release builds on macOS 14, the oldest system its Homebrew libraries then run on.
-  # MVTools is built for macOS 15, so motion interpolation is tested on a second runner.
+  # macOS 15: GitHub retired the macOS 14 image, and Homebrew's libraries, built for the
+  # runner's system, make 15 the oldest the app runs on anyway; MVTools needs it as well.
   macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            release: true
-          - runner: macos-15
-            release: false
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +185,14 @@ jobs:
           -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$(brew --prefix)"
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set +e
+          cmake --build build --parallel 2>&1 | tee build-output.txt
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E 'error:|FAILED' build-output.txt | head -12 | while IFS= read -r line; do echo "::error::$line"; done
+            exit "$code"
+          fi
 
       # Motion interpolation that needs nothing installed: a relocatable Python with
       # VapourSynth and MVTools, every download pinned by its published hash. It goes beside
@@ -195,7 +218,7 @@ jobs:
           rm -rf lib/python3.13/site-packages/pip lib/python3.13/site-packages/pip-*
           rm -rf lib/python3.13/site-packages/vapoursynth/include lib/python3.13/site-packages/vapoursynth/pkgconfig
           find . -name __pycache__ -type d -prune -exec rm -rf {} +
-          "$root/bin/python3" -I -c 'from vapoursynth import core; assert hasattr(core, "mv")' || [ "${{ matrix.release }}" = true ]
+          "$root/bin/python3" -I -c 'from vapoursynth import core; assert hasattr(core, "mv")'
           echo "Motion interpolation set: $(du -sh "$root/.." | cut -f1)"
 
       - name: Smoke tests
@@ -204,7 +227,6 @@ jobs:
       # Qt and libtorrent go in by macdeployqt; libmpv is loaded at run time, so it and
       # everything it needs are copied in separately.
       - name: Bundle
-        if: matrix.release
         run: |
           app="build/Miku Library.app"
           mkdir -p "$app/Contents/Frameworks"
@@ -216,7 +238,6 @@ jobs:
           ditto -c -k --keepParent "$app" MikuLibrary-macOS-arm64.zip
 
       - uses: actions/upload-artifact@v4
-        if: matrix.release
         with:
           name: miku-library-macos-arm64
           path: MikuLibrary-macOS-arm64.zip
@@ -225,5 +246,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-test-logs-${{ matrix.runner }}
+          name: smoke-test-logs-macos
           path: build/*.log

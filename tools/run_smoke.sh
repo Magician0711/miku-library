@@ -27,7 +27,14 @@ for test in DetailLibrarySmoke DirectorySmoke DownloadSmoke ExternalDownloaderSm
     echo "$test exit=$code passed=$passed failed=$failures"
     if [ "$code" -ne 0 ]; then
         failed+=("$test")
-        [ -f "$log" ] && grep ' FAIL$' "$log" | sed 's/^/  /'
+        if [ -f "$log" ]; then
+            # In GitHub Actions each failure becomes a notice, readable without the log.
+            if [ -n "${GITHUB_ACTIONS:-}" ]; then
+                grep ' FAIL$' "$log" | while IFS= read -r line; do echo "::error title=$test::$line"; done
+            else
+                grep ' FAIL$' "$log" | sed 's/^/  /'
+            fi
+        fi
     fi
 done
 if [ ${#failed[@]} -gt 0 ]; then

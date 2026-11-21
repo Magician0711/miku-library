@@ -2,7 +2,7 @@
 
 [← 返回 README](../README.md)
 
-C++20 · Qt Quick（QML）· SQLite · libtorrent · libmpv，支持 Windows x64、Linux x86_64 和 macOS（Apple 芯片）。
+C++20 · Qt Quick（QML）· SQLite · libtorrent · libmpv，支持 Windows x64、Linux x86_64 和 macOS 15 以上（Apple 芯片）。
 
 ## 构建
 
@@ -104,7 +104,9 @@ qml/      全部界面：主题（T.qml）、基础控件（Nx*）、页面与�
 - `qml/Shell.qml`：页面共用的边距、工具栏高度和底部导航栏占的高度（`bottomInset`）。列表延伸到导航栏下方，用 `bottomMargin` 让最后一行停在它上方。
 - Windows 的 `libmpv-2.dll` 超过 GitHub 的单文件大小上限，没有放进仓库。克隆后从 [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake) 的发布页下载 `mpv-dev-x86_64` 压缩包，把其中的 `libmpv-2.dll` 放到 `third_party/mpv/`；缺少时程序仍能构建，只是内置播放器不可用。
 - 录制界面：`tools/showreel_capture.cpp` 按固定的 1/60 秒步进动画并逐帧抓图，窗口停在桌面之外、不抢焦点，用来给发布视频录制真实的界面动画。默认不构建，配置时加 `-DMIKU_BUILD_SHOWREEL_CAPTURE=ON`；脚本命令见文件开头的注释。录制播放器时用环境变量 `MIKU_LIBRARY_MPV_SPEED` 放慢 mpv（例如 `0.1667` 配合每帧 100 毫秒），让画面和界面同步。
-- 补帧：「平滑」是 mpv 的 `video-sync=display-resample` 加 `interpolation`（`tscale=oversample`）；「运动补偿」把 `PlayerController.cpp` 里的 VapourSynth 脚本写到数据目录的 `interpolate.vpy`，用 `vf=vapoursynth` 加载，只有能加载 `VSScript.dll` 时才提供。Windows 版自带这套组件：`tools/assemble_vapoursynth.py` 校验三个官方压缩包（VapourSynth R82 便携版、Python 3.13.15 嵌入式版、MVTools v29 的 Windows wheel，原文件存放在 `archives/vapoursynth/`）的 SHA256，按 VapourSynth 自己的便携布局拼成 `third_party/vapoursynth`（去掉调试符号）；CMake 复制到 `build/vapoursynth`，`deploy_dist.py` 复制到程序目录。播放器启动时把 `VSSCRIPT_PATH` 指向其中的 `vsscript.dll`（libmpv 先看这个环境变量，再看注册表），所以总是用自带的这份，与电脑上是否装过 VapourSynth 无关。嵌入式 Python 只读 `python313._pth` 里的路径，不受系统 Python 和 `PYTHONPATH` 影响。打包脚本把 `vapoursynth/` 整个原样带上，依赖检查认可其中的模块从嵌入式 Python 加载。渲染接口看不到屏幕，所以 `MpvVideoItem` 把屏幕刷新率告诉 mpv（`display-fps-override`），并在每帧上屏后调用 `mpv_render_context_report_swap`。
+- 补帧：「平滑」是 mpv 的 `video-sync=display-resample` 加 `interpolation`（`tscale=oversample`）；「运动补偿」把 `PlayerController.cpp` 里的 VapourSynth 脚本写到数据目录的 `interpolate.vpy`，用 `vf=vapoursynth` 加载，只有能加载 `VSScript.dll` 时才提供。Windows 版自带这套组件：`tools/assemble_vapoursynth.py` 校验三个官方压缩包（VapourSynth R82 便携版、Python 3.13.15 嵌入式版、MVTools v29 的 Windows wheel，原文件存放在 `archives/vapoursynth/`）的 SHA256，按 VapourSynth 自己的便携布局拼成 `third_party/vapoursynth`（去掉调试符号）；CMake 复制到 `build/vapoursynth`，`deploy_dist.py` 复制到程序目录。播放器启动时把 `VSSCRIPT_PATH` 指向其中的 `vsscript.dll`（libmpv 先看这个环境变量，再看注册表），所以总是用自带的这份，与电脑上是否装过 VapourSynth 无关。嵌入式 Python 只读 `python313._pth` 里的路径，不受系统 Python 和 `PYTHONPATH` 影响。打包脚本把 `vapoursynth/` 整个原样带上，依赖检查认可其中的模块从嵌入式 Python 加载。
+
+macOS 版同样自带，由 CI 生成：python-build-standalone 的可移动 Python 3.13（aarch64），用 pip 按 PyPI 公布的哈希装入 VapourSynth R82 和 MVTools v29，去掉 pip、测试、Tk、头文件和字节码缓存，放在 `build/vapoursynth/python` 供测试使用，再随包放进 `Contents/Resources/vapoursynth`。Homebrew 的 libmpv 0.42 同样先看 `VSSCRIPT_PATH`（其中 `libvsscript.dylib` 的真实路径）。macOS 上的 VSScript 从用户配置目录的 `vapoursynth/vapoursynth.toml`（`XDG_CONFIG_HOME`，默认 `~/.config`）读取 Python 位置，每个 VSScript 一条记录；记录里没有自带的这份时，播放器运行一次自带 Python 的 `-m vapoursynth config` 加上它，别的记录不动。CI 在 macOS 15 上构建（GitHub 已停用 macOS 14 的运行环境），Homebrew 的库按构建机的系统编译，所以 macOS 版最低要求 15（`LSMinimumSystemVersion`），这也正是 MVTools 的 macOS 版本要求的系统。渲染接口看不到屏幕，所以 `MpvVideoItem` 把屏幕刷新率告诉 mpv（`display-fps-override`），并在每帧上屏后调用 `mpv_render_context_report_swap`。
 - 内置播放器：libmpv 运行时加载（`src/app/PlayerController.cpp`，各平台的查找位置见 `mpvCandidates()`）；Windows 的 `third_party/mpv/libmpv-2.dll` 由 CMake 复制到构建目录，发布时放在程序旁边。Anime4K 着色器放在 `shaders/anime4k/`。画面由 `src/app/MpvVideoItem.cpp` 画到场景图的纹理上：Windows 用 mpv 的 D3D11 接口，其他平台用 OpenGL 接口。设置环境变量 `MIKU_LIBRARY_MPV_LOG` 为文件路径可输出 mpv 日志。
 - `qml/Scaffold.qml`：页面骨架：标题、工具栏和固定行（`fixed`）。内容会滚到标题下方的页面把滚动距离传给 `scrolled`，标题和工具栏随内容一起移出窗口；带固定行的列表页自己裁剪。
 - `qml/Glass.qml`：玻璃对 `backdrop` 的取样位置写成 `backdrop.mapFromItem(parent, x, y)`，x、y 真正参与计算，绑定才会跟着变。只为建立依赖而读取（`void [x, y, ...]` 或不用的函数参数）会被 QML 编译器优化掉。`liquid: false`（底部导航栏）是窗口背景的同一种材质：模糊 64、放大 1.5 倍、几乎去色，底色用 `T.bgTint`，再叠一层 `T.fill` 和细边，与背景区分但不融入；不画阴影。
