@@ -62,8 +62,17 @@ jobs:
             echo "::notice title=$1 exit $code::$(grep -v -E 'enabled features|auto_profiles|Option|option' "$1.log" | grep -i -E 'vapoursynth|vsscript|python|error|fail|filter|vf|Exiting' | tail -15 | tr '\n' ' ' | cut -c1-1800)"
             echo "::notice title=$1 tail::$(tail -8 "$1.log" | tr '\n' ' ' | cut -c1-1200)"
           }
-          run without-path
-          VSSCRIPT_PATH="$VSSCRIPT" run with-path
           VSSCRIPT_PATH="$VSSCRIPT" PYTHONHOME="$RUNNER_TEMP/vs/python" run with-home
+          # VSScript asks for `vapoursynth config`: see what it writes, and where.
+          touch stamp; sleep 1
+          py=vs/python/bin/python3
+          echo "::notice title=config help::$($py -m vapoursynth config --help 2>&1 | tr '\n' ' ' | cut -c1-1500)"
+          echo "::notice title=config run::$($py -m vapoursynth config 2>&1 | tr '\n' ' ' | cut -c1-1500)"
+          written=$(find "$RUNNER_TEMP" "$HOME/Library" "$HOME/.config" -newer stamp -type f 2>/dev/null | grep -v -E '\.log$|__pycache__' | head -10)
+          echo "::notice title=config files::$written"
+          for f in $written; do echo "::notice title=content $(basename "$f")::$(head -c 1200 "$f" | tr '\n' ' ')"; done
+          VSSCRIPT_PATH="$VSSCRIPT" run after-config
+          echo "::notice title=frames::$(grep -i -E 'fps|frame' after-config.log | tail -4 | tr '\n' ' ' | cut -c1-800)"
+          echo "::notice title=utils::$(grep -n -i -E 'config|json|ini|PYTHON|executable|libpython' vs/python/lib/python3.13/site-packages/vapoursynth/_utils.py | head -40 | tr '\n' ' ' | cut -c1-2500)"
           # Where the size goes, to see what can stay behind.
           echo "::notice title=size::$(cd vs/python && du -sk lib/python3.13/* bin lib/*.dylib 2>/dev/null | sort -rn | head -12 | awk '{print $2"="int($1/1024)"M"}' | tr '\n' ' ')"
