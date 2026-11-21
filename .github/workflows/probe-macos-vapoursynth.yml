@@ -64,5 +64,4 @@ jobs:
           VSSCRIPT_PATH="$VSSCRIPT" run with-path
           VSSCRIPT_PATH="$VSSCRIPT" PYTHONHOME="$RUNNER_TEMP/vs/python" run with-home
           # Where the size goes, to see what can stay behind.
-          echo "::notice title=size::$(cd vs/python && du -sk lib/python3.13/* bin lib/*.dylib 2>/dev/null | sort -rn | head -12 | awk '{print $2"="int($1/1024)"M"}' | tr '
-' ' ')"
+          echo "::notice title=size::$(cd vs/python && du -sk lib/python3.13/* bin lib/*.dylib 2>/dev/null | sort -rn | head -12 | awk '{print $2"="int($1/1024)"M"}' | tr '\n' ' ')"
