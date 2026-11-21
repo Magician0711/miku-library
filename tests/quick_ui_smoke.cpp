@@ -58,6 +58,10 @@ QStringList g_warnings;
 
 void collect(QtMsgType type, const QMessageLogContext &, const QString &message)
 {
+    // A window asked to be larger than the screen is the test machine's limit, not a QML
+    // problem, though Qt names the window by its QML type.
+    if (message.startsWith(QLatin1String("QWindowsWindow::setGeometry: Unable to set geometry")))
+        return;
     if (type != QtDebugMsg && type != QtInfoMsg && (message.contains("qrc:/") || message.contains("QML")))
         g_warnings << message;
 }
@@ -308,6 +312,10 @@ int main(int argc, char **argv)
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constLast());
     controller.setWindow(window);
     check(window && waitFor([&] { return window->isExposed(); }), "the window opens");
+    if (window && !window->isExposed())
+        report.write("    window not exposed: visible=" + QByteArray::number(window->isVisible()) + " visibility=" + QByteArray::number(int(window->visibility()))
+                     + " size=" + QByteArray::number(window->width()) + "x" + QByteArray::number(window->height())
+                     + " flags=0x" + QByteArray::number(int(window->flags()), 16) + "\n");
     check(window->flags() & Qt::FramelessWindowHint, "the window draws its own frame");
     {
         auto *logo = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "brandLogo"; });

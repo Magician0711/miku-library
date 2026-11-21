@@ -25,12 +25,19 @@ for test in DetailLibrarySmoke DirectorySmoke DownloadSmoke ExternalDownloaderSm
         failures=$(grep -c ' FAIL$' "$log")
     fi
     echo "$test exit=$code passed=$passed failed=$failures"
+    if [ -n "${GITHUB_ACTIONS:-}" ] && [ -f "$log" ]; then
+        grep 'motion interpolation output' "$log" | while IFS= read -r line; do echo "::notice title=$test::$line"; done
+    fi
     if [ "$code" -ne 0 ]; then
         failed+=("$test")
         if [ -f "$log" ]; then
             # In GitHub Actions each failure becomes a notice, readable without the log.
+            # GitHub shows ten per step: the count, the first failures in order, then the
+            # lines that are neither (QML warnings, diagnostics).
             if [ -n "${GITHUB_ACTIONS:-}" ]; then
-                grep ' FAIL$' "$log" | while IFS= read -r line; do echo "::error title=$test::$line"; done
+                echo "::error title=$test::passed=$passed failed=$failures exit=$code"
+                grep ' FAIL$' "$log" | head -5 | while IFS= read -r line; do echo "::error title=$test::$line"; done
+                grep -v -E ' (PASS|FAIL)$' "$log" | head -4 | while IFS= read -r line; do echo "::warning title=$test::$line"; done
             else
                 grep ' FAIL$' "$log" | sed 's/^/  /'
             fi
