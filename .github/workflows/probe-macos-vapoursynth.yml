@@ -58,7 +58,9 @@ jobs:
           run() {
             mpv --no-config --vo=null --ao=null --untimed --frames=120 --msg-level=all=v --vf="vapoursynth=file=$RUNNER_TEMP/motion.vpy" \
                 'av://lavfi:testsrc=size=640x360:rate=25:duration=10' > "$1.log" 2>&1
-            echo "::notice title=$1 exit $?::$(grep -i -E 'vapoursynth|vsscript|python|error|fail|fps' "$1.log" | grep -v -i 'option' | head -12 | tr '\n' ' ' | cut -c1-900)"
+            code=$?
+            echo "::notice title=$1 exit $code::$(grep -v -E 'enabled features|auto_profiles|Option|option' "$1.log" | grep -i -E 'vapoursynth|vsscript|python|error|fail|filter|vf|Exiting' | tail -15 | tr '\n' ' ' | cut -c1-1800)"
+            echo "::notice title=$1 tail::$(tail -8 "$1.log" | tr '\n' ' ' | cut -c1-1200)"
           }
           run without-path
           VSSCRIPT_PATH="$VSSCRIPT" run with-path
