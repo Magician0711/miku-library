@@ -30,36 +30,43 @@ void prepare(QWindow *window)
     ns.movableByWindowBackground = NO;
 }
 
-// The desktop shows through the window: a behind-window effect view holds Qt's view,
-// which draws with transparency over it.
+// The desktop shows through the window: a behind-window effect view sits in the window's
+// frame, under Qt's view, which draws with transparency over it. Qt's view stays the
+// content view: Qt tracks a window's exposure through it, and a window whose view had been
+// moved into another one was never reported as exposed, so it stopped drawing.
+static NSVisualEffectView *backdropOf(NSWindow *ns)
+{
+    for (NSView *view in ns.contentView.superview.subviews) {
+        if ([view isKindOfClass:[NSVisualEffectView class]] && [view.identifier isEqualToString:@"MikuBackdrop"])
+            return static_cast<NSVisualEffectView *>(view);
+    }
+    return nil;
+}
+
 bool setBackdrop(QWindow *window, bool on)
 {
     NSWindow *ns = nativeWindow(window);
-    if (!ns)
+    if (!ns || !ns.contentView.superview)
         return false;
-    NSView *qtView = reinterpret_cast<NSView *>(window->winId());
-    NSView *holder = qtView.superview;
-    const bool wrapped = [holder isKindOfClass:[NSVisualEffectView class]];
+    NSVisualEffectView *effect = backdropOf(ns);
     if (!on) {
-        if (wrapped)
-            static_cast<NSVisualEffectView *>(holder).state = NSVisualEffectStateInactive;
+        if (effect)
+            effect.state = NSVisualEffectStateInactive;
         return false;
     }
-    if (!wrapped) {
-        NSVisualEffectView *effect = [[NSVisualEffectView alloc] initWithFrame:qtView.frame];
+    if (!effect) {
+        NSView *frame = ns.contentView.superview;
+        effect = [[NSVisualEffectView alloc] initWithFrame:frame.bounds];
+        effect.identifier = @"MikuBackdrop";
         effect.blendingMode = NSVisualEffectBlendingModeBehindWindow;
         effect.material = NSVisualEffectMaterialUnderWindowBackground;
         effect.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-        ns.contentView = effect;
-        qtView.frame = effect.bounds;
-        qtView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-        [effect addSubview:qtView];
+        [frame addSubview:effect positioned:NSWindowBelow relativeTo:ns.contentView];
 #if !__has_feature(objc_arc)
         [effect release];
 #endif
-        holder = effect;
     }
-    static_cast<NSVisualEffectView *>(holder).state = NSVisualEffectStateFollowsWindowActiveState;
+    effect.state = NSVisualEffectStateFollowsWindowActiveState;
     ns.opaque = NO;
     ns.backgroundColor = NSColor.clearColor;
     return true;

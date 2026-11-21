@@ -316,7 +316,10 @@ int main(int argc, char **argv)
         report.write("    window not exposed: visible=" + QByteArray::number(window->isVisible()) + " visibility=" + QByteArray::number(int(window->visibility()))
                      + " size=" + QByteArray::number(window->width()) + "x" + QByteArray::number(window->height())
                      + " flags=0x" + QByteArray::number(int(window->flags()), 16) + "\n");
+#ifndef Q_OS_MACOS
+    // macOS keeps the system's title bar for its window buttons (checked further down).
     check(window->flags() & Qt::FramelessWindowHint, "the window draws its own frame");
+#endif
     {
         auto *logo = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "brandLogo"; });
         check(logo && logo->property("status").toInt() == 1, "the navigation bar shows the logo");
@@ -359,6 +362,8 @@ int main(int argc, char **argv)
         check(hasText(QStringLiteral("本季放送")) && controller.contextTitle() == QStringLiteral("本季放送"), "Simplified Chinese comes back");
         config.language = "zh-CN";
     }
+#ifndef Q_OS_MACOS
+    // The drawn window buttons; macOS shows the system's instead.
     {
         auto *circle = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "closeCircle"; });
         check(circle && qFuzzyCompare(circle->property("radius").toReal(), circle->width() / 2), "the close button is a circle");
@@ -367,6 +372,7 @@ int main(int argc, char **argv)
             check(qAbs(centre.x() - (window->width() - 24)) < 1 && qAbs(centre.y() - 24) < 1, "the close circle shares its centre with the window corner");
         }
     }
+#endif
     check(window->rendererInterface()->graphicsApi() != QSGRendererInterface::Software, "the interface renders on the GPU");
     settle(300);
 
@@ -897,16 +903,14 @@ int main(int argc, char **argv)
                           "the picture and its controls end above the navigation bar");
                 }
                 if (video) {
-                    settle(400);
-                    const QImage shot = window->grabWindow();
-                    const qreal ratio = shot.width() / qreal(window->width());
-                    const QPointF middle = video->mapToScene(QPointF(video->width() * 0.3, video->height() * 0.3));
-                    const QColor pixel = shot.pixelColor(int(middle.x() * ratio), int(middle.y() * ratio));
-                    check(pixel.lightness() > 25, "the picture is drawn, not black");
+                    // Sampled until the picture shows, for up to three seconds: a software
+                    // renderer (the Linux CI's) can take a while over the first frames.
+                    QImage shot;
+                    qreal ratio = 1;
+                    const qreal pw = qMin(video->width(), video->height() * 16 / 9), ph = pw * 9 / 16;
                     // testsrc runs a rainbow gradient across the lower part of the frame; the
                     // colour bars mirrored there would show only a few hues. The picture is
                     // 16:9, fitted into the item.
-                    const qreal pw = qMin(video->width(), video->height() * 16 / 9), ph = pw * 9 / 16;
                     const auto hues = [&](qreal row) {
                         QSet<int> seen;
                         for (int i = 0; i < 48; ++i) {
@@ -917,6 +921,16 @@ int main(int argc, char **argv)
                         }
                         return seen.size();
                     };
+                    const auto lightness = [&] {
+                        const QPointF middle = video->mapToScene(QPointF(video->width() * 0.3, video->height() * 0.3));
+                        return shot.pixelColor(int(middle.x() * ratio), int(middle.y() * ratio)).lightness();
+                    };
+                    waitFor([&] {
+                        shot = window->grabWindow();
+                        ratio = shot.width() / qreal(window->width());
+                        return lightness() > 25 && hues(0.81) > hues(0.19) + 4;
+                    }, 3000);
+                    check(lightness() > 25, "the picture is drawn, not black");
                     check(hues(0.81) > hues(0.19) + 4, "the picture is the right way up");
                 }
                 player->setUpscale(1);

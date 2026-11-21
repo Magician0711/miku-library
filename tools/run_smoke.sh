@@ -36,7 +36,7 @@ for test in DetailLibrarySmoke DirectorySmoke DownloadSmoke ExternalDownloaderSm
             # lines that are neither (QML warnings, diagnostics).
             if [ -n "${GITHUB_ACTIONS:-}" ]; then
                 echo "::error title=$test::passed=$passed failed=$failures exit=$code"
-                grep ' FAIL$' "$log" | head -5 | while IFS= read -r line; do echo "::error title=$test::$line"; done
+                echo "::error title=$test failures::$(grep ' FAIL$' "$log" | sed 's/ FAIL$//' | paste -sd ';' - | cut -c1-3000)"
                 grep -v -E ' (PASS|FAIL)$' "$log" | head -4 | while IFS= read -r line; do echo "::warning title=$test::$line"; done
             else
                 grep ' FAIL$' "$log" | sed 's/^/  /'
