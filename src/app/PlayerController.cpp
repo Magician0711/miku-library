@@ -154,7 +154,7 @@ void configureVsScript(const QString &library)
     const QString home = qEnvironmentVariableIsSet("XDG_CONFIG_HOME") ? qEnvironmentVariable("XDG_CONFIG_HOME")
                                                                       : QDir::homePath() + QStringLiteral("/.config");
     QFile config(home + QStringLiteral("/vapoursynth/vapoursynth.toml"));
-    if (config.open(QIODevice::ReadOnly) && config.readAll().contains(QByteArray('"') + library.toUtf8() + '"'))
+    if (config.open(QIODevice::ReadOnly) && config.readAll().contains("\"" + library.toUtf8() + "\""))
         return;
     config.close();
     // .../vapoursynth/python/lib/python3.13/site-packages/vapoursynth/libvsscript.dylib

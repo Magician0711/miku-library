@@ -438,9 +438,15 @@ int main(int argc, char **argv)
         QObject::connect(&theme, &ThemeController::darkChanged, &app, [&] { ++flips; });
         const bool before = theme.dark();
         theme.setMode(before ? "light" : "dark");
-        check(theme.dark() == before, "the palette waits for the still of the old look");
-        check(waitFor([&] { return theme.dark() != before; }, 1000), "the palette flips once the still is on screen");
-        check(fade && fade->property("opacity").toReal() > 0.5, "the still covers the window when the palette flips");
+        if (theme.animated()) {
+            check(theme.dark() == before, "the palette waits for the still of the old look");
+            check(waitFor([&] { return theme.dark() != before; }, 1000), "the palette flips once the still is on screen");
+            check(fade && fade->property("opacity").toReal() > 0.5, "the still covers the window when the palette flips");
+        } else {
+            // With Windows' animation effects off (as on CI machines) the switch is instant.
+            check(theme.dark() != before && fade && !fade->property("visible").toBool(),
+                  "without animation effects the palette flips at once, with no fade");
+        }
         const QColor mid = window->grabWindow().pixelColor(window->width() / 2, window->height() - 30);
         settle(600);
         const QColor end = window->grabWindow().pixelColor(window->width() / 2, window->height() - 30);

@@ -42,6 +42,16 @@ jobs:
 
       - uses: ilammy/msvc-dev-cmd@v1
 
+      # The built-in player's libmpv, over GitHub's file size limit and so not in the
+      # repository: the same shinchiro build the release ships, pinned by its hash.
+      - name: libmpv
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mpv-dev.7z'
+          Invoke-WebRequest 'https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261109/mpv-dev-x86_64-20261109-git-8bc468896e.7z' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4E888424015F7146893D03C4D40E2AAF9474D8D47E761BCC6A97489008A7E425') { throw 'libmpv archive hash mismatch' }
+          7z e $archive libmpv-2.dll -othird_party/mpv -y | Out-Null
+          if (-not (Test-Path third_party/mpv/libmpv-2.dll)) { throw 'libmpv-2.dll missing from the archive' }
+
       # Motion interpolation that needs nothing installed. assemble_vapoursynth.py checks
       # each official archive against its published hash before using it.
       - name: Motion interpolation set
