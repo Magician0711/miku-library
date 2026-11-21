@@ -38,12 +38,13 @@ jobs:
           site=$($py -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           echo "::notice title=layout::$(cd "$site/vapoursynth" && find . -maxdepth 2 -type f ! -name '*.py' ! -name '*.pyi' | tr '\n' ' ') | size $(du -sh vs | cut -f1)"
           echo "::notice title=core::$($py -c 'from vapoursynth import core; print(core.core_version.release_major, hasattr(core, "mv"))' 2>&1 | tail -1)"
-          script="$(find "$site/vapoursynth" -name 'libvapoursynth-script*.dylib' | head -1)"
+          script="$(find "$site/vapoursynth" -name 'libvsscript.dylib' | head -1)"
           echo "::notice title=vsscript::$script | $(otool -L "$script" | tail -n +2 | tr '\n' ' ')"
           echo "VSSCRIPT=$script" >> "$GITHUB_ENV"
 
       - name: mpv through the carried copy
         run: |
+          set +e
           cd "$RUNNER_TEMP"
           cat > motion.vpy <<'EOF'
           import vapoursynth as vs
@@ -62,3 +63,6 @@ jobs:
           run without-path
           VSSCRIPT_PATH="$VSSCRIPT" run with-path
           VSSCRIPT_PATH="$VSSCRIPT" PYTHONHOME="$RUNNER_TEMP/vs/python" run with-home
+          # Where the size goes, to see what can stay behind.
+          echo "::notice title=size::$(cd vs/python && du -sk lib/python3.13/* bin lib/*.dylib 2>/dev/null | sort -rn | head -12 | awk '{print $2"="int($1/1024)"M"}' | tr '
+' ' ')"
