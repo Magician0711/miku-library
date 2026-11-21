@@ -5,21 +5,32 @@
 
 #include "core/AppConfig.h"
 
+#ifdef Q_OS_WIN
 #include <mpv/render_d3d11.h>
+#else
+#include <mpv/render_gl.h>
+#include <QGuiApplication>
+#include <QOpenGLContext>
+#include <QtGui/qguiapplication_platform.h>
+#endif
 
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMutexLocker>
+#include <QOperatingSystemVersion>
+#include <QProcess>
 #include <QQuickWindow>
 #include <QSaveFile>
 #include <QTimer>
 
 #include <clocale>
+#include <vector>
 
 namespace {
 
@@ -30,6 +41,7 @@ struct Mpv {
     NX_MPV(get_property_string) NX_MPV(observe_property) NX_MPV(wait_event) NX_MPV(set_wakeup_callback) NX_MPV(command)
     NX_MPV(command_string) NX_MPV(free) NX_MPV(error_string) NX_MPV(render_context_create) NX_MPV(render_context_free)
     NX_MPV(render_context_render) NX_MPV(render_context_update) NX_MPV(render_context_set_update_callback)
+    NX_MPV(render_context_report_swap)
 #undef NX_MPV
 } api;
 
@@ -40,6 +52,7 @@ bool resolve(QLibrary &library)
     NX_LOAD(get_property_string) NX_LOAD(observe_property) NX_LOAD(wait_event) NX_LOAD(set_wakeup_callback) NX_LOAD(command)
     NX_LOAD(command_string) NX_LOAD(free) NX_LOAD(error_string) NX_LOAD(render_context_create) NX_LOAD(render_context_free)
     NX_LOAD(render_context_render) NX_LOAD(render_context_update) NX_LOAD(render_context_set_update_callback)
+    NX_LOAD(render_context_report_swap)
 #undef NX_LOAD
     return true;
 }
@@ -57,11 +70,141 @@ QStringList anime4k(int mode)
     static const QStringList high = {"Clamp_Highlights", "Restore_CNN_VL", "Upscale_CNN_x2_VL", "AutoDownscalePre_x2", "AutoDownscalePre_x4", "Upscale_CNN_x2_M"};
     if (mode != 1 && mode != 2)
         return {};
-    const QDir folder(QCoreApplication::applicationDirPath() + QStringLiteral("/shaders/anime4k"));
+    const QDir folder(AppConfig::resourcePath(QStringLiteral("shaders/anime4k")));
     QStringList files;
     for (const auto &name : mode == 1 ? fast : high)
         files << folder.filePath(QStringLiteral("Anime4K_%1.glsl").arg(name));
     return files;
+}
+
+// In-between frames from motion vectors (MVTools), at the display's rate or an even share
+// of it. Anything the script cannot handle in real time, or a missing MVTools, passes
+// the video through untouched rather than breaking playback.
+constexpr char kMotionScript[] = R"(import vapoursynth as vs
+core = vs.core
+clip = video_in
+mv = getattr(core, 'mv', None)
+src = container_fps if container_fps > 1 else 24000 / 1001
+dst = display_fps if display_fps > 1 else 60.0
+if dst > 75:
+    dst = dst / round(dst / 60)
+if mv is None or clip.width > 2560 or clip.height > 1440 or dst < src * 1.2:
+    clip.set_output()
+else:
+    clip = core.std.AssumeFPS(clip, fpsnum=int(round(src * 1000)), fpsden=1000)
+    sup = mv.Super(clip, pel=2, hpad=16, vpad=16)
+    bvec = mv.Analyse(sup, truemotion=True, blksize=16, overlap=4, isb=True, chroma=True, search=3)
+    fvec = mv.Analyse(sup, truemotion=True, blksize=16, overlap=4, isb=False, chroma=True, search=3)
+    clip = mv.BlockFPS(clip, sup, bvec, fvec, num=int(round(dst * 1000)), den=1000, mode=3, thscd2=48)
+    clip.set_output()
+)";
+
+QString motionScriptPath() { return AppConfig::dataDir() + QStringLiteral("/interpolate.vpy"); }
+
+// Where libmpv may be: beside the program first, so a release uses the copy it ships.
+QStringList mpvCandidates()
+{
+    const QString dir = QCoreApplication::applicationDirPath();
+#if defined(Q_OS_WIN)
+    return {dir + QStringLiteral("/libmpv-2.dll")};
+#elif defined(Q_OS_MACOS)
+    return {dir + QStringLiteral("/../Frameworks/libmpv.2.dylib"), dir + QStringLiteral("/libmpv.2.dylib"),
+            QStringLiteral("/opt/homebrew/lib/libmpv.2.dylib"), QStringLiteral("/usr/local/lib/libmpv.2.dylib"),
+            QStringLiteral("/opt/homebrew/lib/libmpv.dylib"), QStringLiteral("/usr/local/lib/libmpv.dylib")};
+#else
+    // libmpv.so.2 since mpv 0.35, libmpv.so.1 before; the calls used here are in both.
+    return {dir + QStringLiteral("/libmpv.so.2"), dir + QStringLiteral("/../lib/libmpv.so.2"),
+            QStringLiteral("libmpv.so.2"), QStringLiteral("libmpv.so.1")};
+#endif
+}
+
+// The Windows and macOS releases carry VapourSynth, MVTools and a Python of their own, so
+// the motion mode works out of the box (tools/assemble_vapoursynth.py on Windows, the macOS
+// bundle step in CI). Beside the program on Windows, in the bundle's Resources on macOS, and
+// beside the test programs in a build folder on both.
+QString bundledVsScript()
+{
+    const QString dir = QCoreApplication::applicationDirPath();
+#if defined(Q_OS_WIN)
+    return dir + QStringLiteral("/vapoursynth/Lib/site-packages/vapoursynth/vsscript.dll");
+#elif defined(Q_OS_MACOS)
+    // MVTools is built for macOS 15 and later; older systems keep to an installed copy.
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 15))
+        return {};
+    const QString inside = QStringLiteral("/vapoursynth/python/lib/python3.13/site-packages/vapoursynth/libvsscript.dylib");
+    for (const QString &root : {dir + QStringLiteral("/../Resources"), dir}) {
+        // The real path, as VSScript names its own entry in vapoursynth.toml.
+        if (QFile::exists(root + inside))
+            return QFileInfo(root + inside).canonicalFilePath();
+    }
+    return {};
+#else
+    Q_UNUSED(dir)
+    return {};
+#endif
+}
+
+#if defined(Q_OS_MACOS)
+// VSScript on macOS learns where its Python is from vapoursynth.toml in the user's
+// configuration folder, one entry per VSScript library, which `vapoursynth config` writes for
+// the Python it runs under. The carried copy adds its own entry the first time, and again
+// after the app moves; entries of other VapourSynth installs are left alone.
+void configureVsScript(const QString &library)
+{
+    const QString home = qEnvironmentVariableIsSet("XDG_CONFIG_HOME") ? qEnvironmentVariable("XDG_CONFIG_HOME")
+                                                                      : QDir::homePath() + QStringLiteral("/.config");
+    QFile config(home + QStringLiteral("/vapoursynth/vapoursynth.toml"));
+    if (config.open(QIODevice::ReadOnly) && config.readAll().contains(QByteArray('"') + library.toUtf8() + '"'))
+        return;
+    config.close();
+    // .../vapoursynth/python/lib/python3.13/site-packages/vapoursynth/libvsscript.dylib
+    QDir python(QFileInfo(library).absolutePath());
+    python.cd(QStringLiteral("../../../.."));
+    QProcess process;
+    process.start(python.filePath(QStringLiteral("bin/python3")), {QStringLiteral("-I"), QStringLiteral("-m"), QStringLiteral("vapoursynth"), QStringLiteral("config")});
+    if (!process.waitForFinished(15000) || process.exitCode() != 0)
+        qWarning().noquote() << "vapoursynth config failed:" << process.readAllStandardError();
+}
+#endif
+
+// The motion mode depends on VapourSynth: the copy the program carries, else an installed one.
+bool vapourSynthInstalled()
+{
+    // libmpv looks at VSSCRIPT_PATH before anywhere else, so the carried copy wins over
+    // whatever VapourSynth the computer may have, or lack.
+    const QString bundled = bundledVsScript();
+    if (!bundled.isEmpty() && QFile::exists(bundled)) {
+        qputenv("VSSCRIPT_PATH", QDir::toNativeSeparators(bundled).toUtf8());
+        QLibrary library(bundled);
+        if (library.load()) {
+#if defined(Q_OS_MACOS)
+            configureVsScript(bundled);
+#endif
+            return true;
+        }
+        qWarning().noquote() << "bundled VapourSynth unavailable:" << library.errorString();
+        qunsetenv("VSSCRIPT_PATH");
+    }
+#if defined(Q_OS_WIN)
+    const QStringList names{QStringLiteral("VSScript")};
+#elif defined(Q_OS_MACOS)
+    const QStringList names{QStringLiteral("/opt/homebrew/lib/libvapoursynth-script.dylib"),
+                            QStringLiteral("/usr/local/lib/libvapoursynth-script.dylib"), QStringLiteral("vapoursynth-script")};
+#else
+    const QStringList names{QStringLiteral("libvapoursynth-script.so.0"), QStringLiteral("vapoursynth-script")};
+#endif
+    for (const auto &name : names) {
+        QLibrary library(name);
+        if (library.load())
+            return true;
+    }
+    return false;
+}
+
+// mpv's length-prefixed quoting, so a path with colons or commas stays one value.
+QString quoted(const QString &value)
+{
+    return QLatin1Char('%') + QString::number(value.toUtf8().size()) + QLatin1Char('%') + value;
 }
 
 QString trackLabel(const QJsonObject &track, const QString &fallback)
@@ -78,12 +221,21 @@ QString trackLabel(const QJsonObject &track, const QString &fallback)
 PlayerController::PlayerController(QObject *parent)
     : QObject(parent)
 {
-    m_library.setFileName(QCoreApplication::applicationDirPath() + QStringLiteral("/libmpv-2.dll"));
-    if (!m_library.load() || !resolve(m_library)) {
-        qWarning().noquote() << "libmpv unavailable:" << m_library.errorString();
+    QString problem;
+    for (const auto &candidate : mpvCandidates()) {
+        m_library.setFileName(candidate);
+        if (m_library.load() && resolve(m_library))
+            break;
+        if (problem.isEmpty() || m_library.isLoaded())
+            problem = m_library.errorString();
         m_library.unload();
     }
+    if (!m_library.isLoaded())
+        qWarning().noquote() << "libmpv unavailable:" << problem;
+    m_motionAvailable = available() && vapourSynthInstalled();
     loadState();
+    if (!m_motionAvailable && m_interpolation == 2)
+        m_interpolation = 1;
     m_saveTimer = new QTimer(this);
     m_saveTimer->setInterval(10000);
     connect(m_saveTimer, &QTimer::timeout, this, &PlayerController::rememberPosition);
@@ -115,6 +267,9 @@ bool PlayerController::initialize()
     // Developers only: mpv's own log, for playback that misbehaves.
     if (qEnvironmentVariableIsSet("MIKU_LIBRARY_MPV_LOG"))
         setOption("log-file", qEnvironmentVariable("MIKU_LIBRARY_MPV_LOG"));
+    // Developers only: slowed playback, so a frame-by-frame recording keeps pace with the picture.
+    if (qEnvironmentVariableIsSet("MIKU_LIBRARY_MPV_SPEED"))
+        setOption("speed", qEnvironmentVariable("MIKU_LIBRARY_MPV_SPEED"));
     if (api.initialize(m_mpv) < 0) {
         api.terminate_destroy(m_mpv);
         m_mpv = nullptr;
@@ -133,6 +288,7 @@ bool PlayerController::initialize()
             QMetaObject::invokeMethod(player, "drainEvents", Qt::QueuedConnection);
     }, this);
     applyUpscale();
+    applyInterpolation();
     return true;
 }
 
@@ -246,18 +402,97 @@ void PlayerController::setUpscale(int mode)
 void PlayerController::applyUpscale()
 {
     if (m_mpv)
-        api.set_property_string(m_mpv, "glsl-shaders", anime4k(m_upscale).join(QLatin1Char(';')).toUtf8().constData());
+        // mpv separates a path list the way the system does: ';' on Windows, ':' elsewhere.
+        api.set_property_string(m_mpv, "glsl-shaders", anime4k(m_upscale).join(QDir::listSeparator()).toUtf8().constData());
 }
 
-QString PlayerController::shaderList() const
+void PlayerController::setInterpolation(int mode)
+{
+    mode = qBound(0, mode, m_motionAvailable ? 2 : 1);
+    if (mode == m_interpolation)
+        return;
+    m_interpolation = mode;
+    applyInterpolation();
+    emit interpolationChanged();
+    saveState();
+}
+
+void PlayerController::setDisplayFps(qreal fps)
+{
+    if (fps <= 1 || qFuzzyCompare(fps, m_displayFps))
+        return;
+    m_displayFps = fps;
+    applyDisplayFps();
+}
+
+void PlayerController::applyDisplayFps()
+{
+    // The render API cannot see the screen, so mpv is told its refresh rate. mpv before
+    // 0.35 (Ubuntu 22.04, for one) calls the same option display-fps.
+    if (!m_mpv || m_displayFps <= 1)
+        return;
+    const QByteArray rate = QByteArray::number(m_displayFps, 'f', 3);
+    if (api.set_property_string(m_mpv, "display-fps-override", rate.constData()) < 0)
+        api.set_property_string(m_mpv, "display-fps", rate.constData());
+}
+
+void PlayerController::applyInterpolation()
+{
+    if (!m_mpv)
+        return;
+    applyDisplayFps();
+    // Both modes pace frames to the display; only "smooth" blends neighbouring frames.
+    api.set_property_string(m_mpv, "video-sync", m_interpolation > 0 ? "display-resample" : "audio");
+    api.set_property_string(m_mpv, "interpolation", m_interpolation == 1 ? "yes" : "no");
+    api.set_property_string(m_mpv, "tscale", "oversample");
+    QString filter;
+    if (m_interpolation == 2) {
+        QSaveFile script(motionScriptPath());
+        if (script.open(QIODevice::WriteOnly) && script.write(kMotionScript) > 0 && script.commit())
+            filter = QStringLiteral("vapoursynth=file=%1:buffered-frames=8:concurrent-frames=auto").arg(quoted(motionScriptPath()));
+    }
+    // VapourSynth works on frames in memory, which hardware decoding has to copy back first.
+    api.set_property_string(m_mpv, "hwdec", filter.isEmpty() ? "auto-safe" : "auto-copy-safe");
+    if (api.set_property_string(m_mpv, "vf", filter.toUtf8().constData()) < 0 && !filter.isEmpty()) {
+        api.set_property_string(m_mpv, "vf", "");
+        emit failed(QCoreApplication::translate("Miku", "无法启用运动补偿补帧，已改用平滑模式。请确认 VapourSynth 和 MVTools 已正确安装。"));
+        m_interpolation = 1;
+        applyInterpolation();
+        emit interpolationChanged();
+    }
+}
+
+QString PlayerController::property(const char *name) const
 {
     if (!m_mpv)
         return {};
-    char *value = api.get_property_string(m_mpv, "glsl-shaders");
+    char *value = api.get_property_string(m_mpv, name);
     const QString result = QString::fromUtf8(value);
     if (value)
         api.free(value);
     return result;
+}
+
+QString PlayerController::shaderList() const
+{
+    return property("glsl-shaders");
+}
+
+double PlayerController::filteredFps() const
+{
+    return property("estimated-vf-fps").toDouble();
+}
+
+QString PlayerController::interpolationState() const
+{
+    return QStringList{property("video-sync"), property("interpolation"), property("vf"), property("display-sync-active")}.join(QLatin1Char(' '));
+}
+
+void PlayerController::reportSwap()
+{
+    QMutexLocker lock(&m_renderLock);
+    if (m_render)
+        api.render_context_report_swap(m_render);
 }
 
 void PlayerController::setVideoVisible(bool visible)
@@ -298,7 +533,7 @@ void PlayerController::drainEvents()
         } else if (event->event_id == MPV_EVENT_END_FILE) {
             const auto *end = static_cast<const mpv_event_end_file *>(event->data);
             if (end->reason == MPV_END_FILE_REASON_ERROR) {
-                emit failed(QStringLiteral("无法播放这个视频：%1").arg(QString::fromUtf8(api.error_string(end->error))));
+                emit failed(QCoreApplication::translate("Miku", "无法播放这个视频：%1").arg(QString::fromUtf8(api.error_string(end->error))));
                 m_active = false;
                 emit activeChanged();
             }
@@ -336,17 +571,17 @@ void PlayerController::drainEvents()
 
 void PlayerController::parseTracks(const QString &json)
 {
-    QVariantList audio, subtitles{QVariantMap{{"text", QStringLiteral("关闭字幕")}, {"value", 0}}};
+    QVariantList audio, subtitles{QVariantMap{{"text", QCoreApplication::translate("Miku", "关闭字幕")}, {"value", 0}}};
     int chosenAudio = 0, chosenSubtitle = 0, audioNumber = 0, subtitleNumber = 0;
     for (const auto &value : QJsonDocument::fromJson(json.toUtf8()).array()) {
         const auto track = value.toObject();
         const int id = track.value("id").toInt();
         const bool selected = track.value("selected").toBool();
         if (track.value("type").toString() == QLatin1String("audio")) {
-            audio << QVariantMap{{"text", trackLabel(track, QStringLiteral("音轨 %1").arg(++audioNumber))}, {"value", id}};
+            audio << QVariantMap{{"text", trackLabel(track, QCoreApplication::translate("Miku", "音轨 %1").arg(++audioNumber))}, {"value", id}};
             if (selected) chosenAudio = id;
         } else if (track.value("type").toString() == QLatin1String("sub")) {
-            subtitles << QVariantMap{{"text", trackLabel(track, QStringLiteral("字幕 %1").arg(++subtitleNumber))}, {"value", id}};
+            subtitles << QVariantMap{{"text", trackLabel(track, QCoreApplication::translate("Miku", "字幕 %1").arg(++subtitleNumber))}, {"value", id}};
             if (selected) chosenSubtitle = id;
         }
     }
@@ -364,13 +599,39 @@ bool PlayerController::createRenderContext(void *device)
         return true;
     if (!m_mpv)
         return false;
+#ifdef Q_OS_WIN
     mpv_d3d11_init_params init{device};
-    mpv_render_param params[] = {
+    std::vector<mpv_render_param> params{
         {MPV_RENDER_PARAM_API_TYPE, const_cast<char *>(MPV_RENDER_API_TYPE_D3D11)},
         {MPV_RENDER_PARAM_D3D11_INIT_PARAMS, &init},
-        {MPV_RENDER_PARAM_INVALID, nullptr},
     };
-    const int result = api.render_context_create(&m_render, m_mpv, params);
+#else
+    Q_UNUSED(device)
+    // The scene graph's context is current on this thread; mpv draws with it.
+    mpv_opengl_init_params init{[](void *, const char *name) -> void * {
+        QOpenGLContext *context = QOpenGLContext::currentContext();
+        return context ? reinterpret_cast<void *>(context->getProcAddress(name)) : nullptr;
+    }, nullptr};
+    std::vector<mpv_render_param> params{
+        {MPV_RENDER_PARAM_API_TYPE, const_cast<char *>(MPV_RENDER_API_TYPE_OPENGL)},
+        {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &init},
+    };
+    // Hardware decoding hands frames over without a copy only when mpv knows the display.
+#if defined(Q_OS_LINUX) && defined(QT_FEATURE_xcb)
+#if QT_CONFIG(xcb)
+    if (auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>())
+        params.push_back({MPV_RENDER_PARAM_X11_DISPLAY, x11->display()});
+#endif
+#endif
+#if defined(Q_OS_LINUX) && defined(QT_FEATURE_wayland)
+#if QT_CONFIG(wayland)
+    if (auto *wayland = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>())
+        params.push_back({MPV_RENDER_PARAM_WL_DISPLAY, wayland->display()});
+#endif
+#endif
+#endif
+    params.push_back({MPV_RENDER_PARAM_INVALID, nullptr});
+    const int result = api.render_context_create(&m_render, m_mpv, params.data());
     if (result < 0) {
         qWarning().noquote() << "mpv render context:" << api.error_string(result);
         m_render = nullptr;
@@ -384,7 +645,7 @@ bool PlayerController::createRenderContext(void *device)
     return true;
 }
 
-bool PlayerController::renderFrame(void *texture, bool force)
+bool PlayerController::renderFrame(quintptr target, const QSize &size, bool force)
 {
     QMutexLocker lock(&m_renderLock);
     if (!m_render)
@@ -392,8 +653,19 @@ bool PlayerController::renderFrame(void *texture, bool force)
     const uint64_t flags = api.render_context_update(m_render);
     if (!force && !m_redrawWanted.exchange(false) && !(flags & MPV_RENDER_UPDATE_FRAME))
         return false;
-    mpv_d3d11_fbo target{texture};
-    mpv_render_param params[] = {{MPV_RENDER_PARAM_D3D11_FBO, &target}, {MPV_RENDER_PARAM_INVALID, nullptr}};
+#ifdef Q_OS_WIN
+    Q_UNUSED(size)
+    mpv_d3d11_fbo fbo{reinterpret_cast<void *>(target)};
+    mpv_render_param params[] = {{MPV_RENDER_PARAM_D3D11_FBO, &fbo}, {MPV_RENDER_PARAM_INVALID, nullptr}};
+#else
+    // Drawn the usual OpenGL way up: the scene graph samples an OpenGL texture with its
+    // origin at the bottom. Flipping here shows the picture upside down (QuickUiSmoke
+    // checks which way up it is).
+    mpv_opengl_fbo fbo{int(target), size.width(), size.height(), 0};
+    int flip = 0;
+    mpv_render_param params[] = {{MPV_RENDER_PARAM_OPENGL_FBO, &fbo}, {MPV_RENDER_PARAM_FLIP_Y, &flip},
+                                 {MPV_RENDER_PARAM_INVALID, nullptr}};
+#endif
     return api.render_context_render(m_render, params) >= 0;
 }
 
@@ -436,6 +708,7 @@ void PlayerController::loadState()
     const auto root = QJsonDocument::fromJson(file.readAll()).object();
     m_volume = qBound(0, root.value("volume").toInt(100), 100);
     m_upscale = qBound(0, root.value("upscale").toInt(0), 2);
+    m_interpolation = qBound(0, root.value("interpolation").toInt(0), 2);
     const auto positions = root.value("positions").toObject();
     for (auto it = positions.begin(); it != positions.end(); ++it)
         m_positions.insert(it.key(), it.value().toDouble());
@@ -449,6 +722,6 @@ void PlayerController::saveState()
     QSaveFile file(statePath());
     if (!file.open(QIODevice::WriteOnly))
         return;
-    file.write(QJsonDocument(QJsonObject{{"volume", m_volume}, {"upscale", m_upscale}, {"positions", positions}}).toJson(QJsonDocument::Compact));
+    file.write(QJsonDocument(QJsonObject{{"volume", m_volume}, {"upscale", m_upscale}, {"interpolation", m_interpolation}, {"positions", positions}}).toJson(QJsonDocument::Compact));
     file.commit();
 }

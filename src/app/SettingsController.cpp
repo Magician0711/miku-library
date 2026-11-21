@@ -46,7 +46,7 @@ bool sameDownloader(const DownloaderSettings &a, const DownloaderSettings &b)
 SettingsController::SettingsController(TorrentEngine *engine, AppConfig *config, ThemeController *theme, DialogHub *dialogs, QObject *parent)
     : QObject(parent), m_engine(engine), m_config(config), m_theme(theme), m_dialogs(dialogs)
 {
-    m_interfaces << QVariantMap{{"text", QStringLiteral("自动选择（默认路由）")}, {"value", QString()}};
+    m_interfaces << QVariantMap{{"text", QCoreApplication::translate("Miku", "自动选择（默认路由）")}, {"value", QString()}};
     QSet<QString> seen;
     for (const auto &iface : QNetworkInterface::allInterfaces()) {
         const auto flags = iface.flags();
@@ -62,7 +62,7 @@ SettingsController::SettingsController(TorrentEngine *engine, AppConfig *config,
             m_interfaces << QVariantMap{{"text", QStringLiteral("%1 · %2").arg(address, iface.humanReadableName())}, {"value", address}};
         }
     }
-    m_updateStatus = QStringLiteral("当前版本 %1").arg(version());
+    m_updateStatus = QCoreApplication::translate("Miku", "当前版本 %1").arg(version());
     load();
 }
 
@@ -94,7 +94,7 @@ void SettingsController::setAppearance(const QString &mode)
     m_theme->setMode(mode);
     m_config->appearance = mode;
     if (!m_config->save())
-        m_dialogs->message(QStringLiteral("外观未保存"), QStringLiteral("已切换外观，但无法写入配置文件，下次启动将恢复原设置。"), QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "外观未保存"), QCoreApplication::translate("Miku", "已切换外观，但无法写入配置文件，下次启动将恢复原设置。"), QStringLiteral("warning"));
 }
 
 void SettingsController::reloadGeneral()
@@ -119,7 +119,7 @@ void SettingsController::load()
     for (const auto &entry : std::as_const(m_interfaces))
         knownInterface = knownInterface || entry.toMap().value("value").toString() == s.bindAddress;
     if (!knownInterface && !s.bindAddress.isEmpty()) {
-        m_interfaces << QVariantMap{{"text", QStringLiteral("当前：%1").arg(s.bindAddress)}, {"value", s.bindAddress}};
+        m_interfaces << QVariantMap{{"text", QCoreApplication::translate("Miku", "当前：%1").arg(s.bindAddress)}, {"value", s.bindAddress}};
         emit interfacesChanged();
     }
     m_form.insert("bindAddress", s.bindAddress);
@@ -143,7 +143,7 @@ void SettingsController::load()
     m_form.insert("downloaderType", m_draft.selected);
     loadDownloaderFields();
     reloadGeneral();
-    m_status = m_engine->running() ? QStringLiteral("内置引擎运行中 · %1").arg(m_engine->version()) : QStringLiteral("内置引擎未启动");
+    m_status = m_engine->running() ? QCoreApplication::translate("Miku", "内置引擎运行中 · %1").arg(m_engine->version()) : QCoreApplication::translate("Miku", "内置引擎未启动");
     emit statusChanged();
     updateDirty();
 }
@@ -162,12 +162,12 @@ void SettingsController::loadDownloaderFields()
     m_form.insert("customArguments", m_draft.customArguments);
     m_form.insert("customVisible", m_editType == "custom");
     m_form.insert("externalVisible", external);
-    QString help = QStringLiteral("直接管理下载进度、补缺集与本地视频，无需额外配置。");
-    if (m_editType == "qbittorrent" || m_editType == "bitcomet") help = QStringLiteral("自动传入番剧保存目录和种子，已有任务继续由原下载器处理。");
-    else if (m_editType == "transmission") help = QStringLiteral("请在 Transmission 添加任务窗口中核对保存目录。");
-    else if (m_editType == "aria2") help = QStringLiteral("选择 aria2c.exe，支持后台运行与本地合集缺集选择。");
-    else if (m_editType == "custom") help = QStringLiteral("选择其他下载器程序，并按该软件的说明填写启动参数。");
-    m_form.insert("downloaderHelp", rpc.enabled ? QStringLiteral("通过本机接口传入番剧目录，支持暂停、恢复、移除与完成后停止。") : help);
+    QString help = QCoreApplication::translate("Miku", "直接管理下载进度、补缺集与本地视频，无需额外配置。");
+    if (m_editType == "qbittorrent" || m_editType == "bitcomet") help = QCoreApplication::translate("Miku", "自动传入番剧保存目录和种子，已有任务继续由原下载器处理。");
+    else if (m_editType == "transmission") help = QCoreApplication::translate("Miku", "请在 Transmission 添加任务窗口中核对保存目录。");
+    else if (m_editType == "aria2") help = QCoreApplication::translate("Miku", "选择 aria2c.exe，支持后台运行与本地合集缺集选择。");
+    else if (m_editType == "custom") help = QCoreApplication::translate("Miku", "选择其他下载器程序，并按该软件的说明填写启动参数。");
+    m_form.insert("downloaderHelp", rpc.enabled ? QCoreApplication::translate("Miku", "通过本机接口传入番剧目录，支持暂停、恢复、移除与完成后停止。") : help);
     emit formChanged();
 }
 
@@ -194,7 +194,7 @@ void SettingsController::set(const QString &name, const QVariant &value)
     if (name == "checkAppUpdates") {
         m_config->checkAppUpdates = value.toBool();
         if (!m_config->save())
-            m_dialogs->message(QStringLiteral("保存失败"), QStringLiteral("无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "保存失败"), QCoreApplication::translate("Miku", "无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
         return;
     }
     if (kGeneralKeys.contains(name)) {
@@ -214,7 +214,7 @@ void SettingsController::saveGeneral()
     if (!m_config->save()) {
         *m_config = before;
         reloadGeneral();
-        m_dialogs->message(QStringLiteral("保存失败"), QStringLiteral("无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "保存失败"), QCoreApplication::translate("Miku", "无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
         return;
     }
     emit generalSettingsChanged();
@@ -284,7 +284,7 @@ void SettingsController::apply()
     m_draft = downloaderFromForm();
     QString error;
     if (!ExternalDownloader::validate(m_draft, &error)) {
-        m_dialogs->message(QStringLiteral("下载器配置未完成"), error, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "下载器配置未完成"), error, QStringLiteral("warning"));
         return;
     }
     const EngineSettings settings = engineFromForm();
@@ -297,7 +297,7 @@ void SettingsController::apply()
     m_config->proxyPort = m_form.value("proxyPort").toInt();
     if (!m_config->save()) {
         *m_config = before;
-        m_dialogs->message(QStringLiteral("保存失败"), QStringLiteral("无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "保存失败"), QCoreApplication::translate("Miku", "无法保存设置，请检查配置文件写入权限。"), QStringLiteral("error"));
         return;
     }
     emit downloaderChanged();
@@ -306,14 +306,14 @@ void SettingsController::apply()
     m_engine->applySettings(settings);
     if (QDir(before.engine.savePath) != QDir(settings.savePath))
         emit downloadFolderChanged(before.engine.savePath, settings.savePath);
-    m_status = QStringLiteral("已应用 · %1").arg(m_engine->version());
+    m_status = QCoreApplication::translate("Miku", "已应用 · %1").arg(m_engine->version());
     emit statusChanged();
     updateDirty();
 }
 
 void SettingsController::browseSavePath()
 {
-    const QString path = NativeDialogs::chooseDirectory(m_window, QStringLiteral("选择下载目录"), m_form.value("savePath").toString());
+    const QString path = NativeDialogs::chooseDirectory(m_window, QCoreApplication::translate("Miku", "选择下载目录"), m_form.value("savePath").toString());
     if (!path.isEmpty())
         set("savePath", path);
 }
@@ -331,7 +331,7 @@ void SettingsController::detectDownloader()
     if (!path.isEmpty())
         set("downloaderPath", path);
     else
-        m_dialogs->message(QStringLiteral("未找到程序"), QStringLiteral("未在常见安装位置找到此下载器，请点击浏览手动选择。"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "未找到程序"), QCoreApplication::translate("Miku", "未在常见安装位置找到此下载器，请点击浏览手动选择。"));
 }
 
 void SettingsController::updateCacheSize()
@@ -344,7 +344,7 @@ void SettingsController::updateCacheSize()
         bytes += it.fileInfo().size();
         ++count;
     }
-    m_cacheSize = count ? QStringLiteral("%1 张 · %2").arg(count).arg(Format::size(bytes)) : QStringLiteral("空");
+    m_cacheSize = count ? QCoreApplication::translate("Miku", "%1 张 · %2").arg(count).arg(Format::size(bytes)) : QCoreApplication::translate("Miku", "空");
     emit cacheChanged();
 }
 
@@ -362,11 +362,11 @@ void SettingsController::requestStopOnCompletion(bool on)
         set("stopOnCompletion", false);
         return;
     }
-    m_dialogs->ask(QStringLiteral("确定要在下载完成后停止上传吗？"),
-        QStringLiteral("下载完成后继续上传（做种）是 BitTorrent 运转的基础：你能下载到的每个资源，都来自其他用户的上传。\n\n"
+    m_dialogs->ask(QCoreApplication::translate("Miku", "确定要在下载完成后停止上传吗？"),
+        QCoreApplication::translate("Miku", "下载完成后继续上传（做种）是 BitTorrent 运转的基础：你能下载到的每个资源，都来自其他用户的上传。\n\n"
                        "如果大家下载完就停止，资源会很快失去来源，冷门番剧和旧番尤其容易变成再也下不动的死种，后来的人只能一直等待。\n\n"
                        "如果只是担心占用网络，可以在本页降低上传上限，不必完全停止。如果所在地对 P2P 上传有限制，请按当地规定选择。"),
-        QStringLiteral("仍要停止上传"), QStringLiteral("继续做种"),
+        QCoreApplication::translate("Miku", "仍要停止上传"), QCoreApplication::translate("Miku", "继续做种"),
         [this](bool confirmed) {
             // The switch shows the form's value, so a refusal puts it back.
             set("stopOnCompletion", confirmed);
@@ -377,7 +377,7 @@ void SettingsController::requestStopOnCompletion(bool on)
 void SettingsController::checkAppUpdate()
 {
     m_checkingUpdate = true;
-    m_updateStatus = QStringLiteral("正在检查…");
+    m_updateStatus = QCoreApplication::translate("Miku", "正在检查…");
     emit updateStatusChanged();
     emit checkAppUpdateRequested();
 }
@@ -385,7 +385,7 @@ void SettingsController::checkAppUpdate()
 void SettingsController::setUpdateResult(const QString &status)
 {
     m_checkingUpdate = false;
-    m_updateStatus = QStringLiteral("当前版本 %1 · %2").arg(version(), status);
+    m_updateStatus = QCoreApplication::translate("Miku", "当前版本 %1 · %2").arg(version(), status);
     emit updateStatusChanged();
 }
 
@@ -395,4 +395,15 @@ void SettingsController::editDownloader(const QString &type)
     setSection(kDownloaderSection);
     if (!type.isEmpty())
         set("downloaderType", type);
+}
+
+void SettingsController::retranslate()
+{
+    emit textsChanged();
+    emit interfacesChanged();
+    emit cacheChanged();
+    emit updateStatusChanged();
+    // Unsaved edits stay; the labels around them follow the language anyway.
+    if (!dirty())
+        load();
 }

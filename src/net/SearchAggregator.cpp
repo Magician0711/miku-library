@@ -3,6 +3,8 @@
 
 #include "SearchAggregator.h"
 
+#include <QCoreApplication>
+
 #include "Providers.h"
 #include "HttpClient.h"
 #include "core/Catalog.h"
@@ -111,7 +113,7 @@ private:
         const QString term = m_terms.at(m_index);
         auto provider = std::shared_ptr<SearchProvider>(makeProvider(m_site, m_client.get()).release());
         if (!provider) {
-            m_errors << QStringLiteral("无适配器");
+            m_errors << QCoreApplication::translate("Miku", "无适配器");
             ++m_index;
             next();
             return;

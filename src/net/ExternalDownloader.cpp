@@ -20,6 +20,7 @@
 #include <QtConcurrent>
 #include <QTimer>
 #include <libtorrent/load_torrent.hpp>
+#include "LibtorrentCompat.h"
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/file_storage.hpp>
@@ -43,20 +44,25 @@ bool ExternalDownloader::validate(const DownloaderSettings &settings,QString *er
     if(settings.supportsRpc(settings.selected)&&settings.rpcProfile(settings.selected).enabled) {
         const QUrl url(settings.rpcProfile(settings.selected).url);
         if((url.scheme()!="http"&&url.scheme()!="https")||!(url.host()=="127.0.0.1"||url.host()=="localhost"||url.host()=="::1")||!url.userInfo().isEmpty())
-            return fail(QStringLiteral("下载器连接地址必须是本机 HTTP(S) 地址，凭据请填在独立输入框。"));
+            return fail(QCoreApplication::translate("Miku", "下载器连接地址必须是本机 HTTP(S) 地址，凭据请填在独立输入框。"));
         return true;
     }
-    if(!DownloaderSettings::types().contains(settings.selected))return fail(QStringLiteral("请选择有效的下载器类型。"));
+    if(!DownloaderSettings::types().contains(settings.selected))return fail(QCoreApplication::translate("Miku", "请选择有效的下载器类型。"));
     const QFileInfo exe(settings.programs.value(settings.selected));
+#ifdef Q_OS_WIN
     if(!exe.isFile()||exe.suffix().compare("exe",Qt::CaseInsensitive)!=0)
-        return fail(QStringLiteral("请在设置中选择已安装下载器的 .exe 程序。"));
+        return fail(QCoreApplication::translate("Miku", "请在设置中选择已安装下载器的 .exe 程序。"));
+#else
+    if(!exe.isFile()||!exe.isExecutable())
+        return fail(QCoreApplication::translate("Miku", "请在设置中选择已安装下载器的程序文件。"));
+#endif
     if(exe.canonicalFilePath().compare(QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath(),Qt::CaseInsensitive)==0)
-        return fail(QStringLiteral("请选择外部下载器，不能选择 Miku Library 自身。"));
+        return fail(QCoreApplication::translate("Miku", "请选择外部下载器，不能选择 Miku Library 自身。"));
     if(settings.selected=="custom") {
-        if(!settings.customArguments.contains("{input}"))return fail(QStringLiteral("自定义参数必须包含 {input}，用于传入磁力链接或种子文件。"));
+        if(!settings.customArguments.contains("{input}"))return fail(QCoreApplication::translate("Miku", "自定义参数必须包含 {input}，用于传入磁力链接或种子文件。"));
         QString rest=settings.customArguments;rest.remove("{input}");rest.remove("{saveDir}");rest.remove("{name}");
         if(QRegularExpression("\\{[^{}]+\\}").match(rest).hasMatch())return fail(QStringLiteral("参数仅支持 {input}、{saveDir}、{name}。"));
-        if(settings.customArguments.count('"')%2!=0)return fail(QStringLiteral("自定义参数的双引号没有成对闭合。"));
+        if(settings.customArguments.count('"')%2!=0)return fail(QCoreApplication::translate("Miku", "自定义参数的双引号没有成对闭合。"));
     }
     return true;
 }
@@ -86,7 +92,7 @@ ExternalCommand ExternalDownloader::command(const LibraryItem &item,const QStrin
             }
             result+=arg.mid(end);arg=result;
         }
-    } else if(error)*error=QStringLiteral("未知的外部下载器类型。");
+    } else if(error)*error=QCoreApplication::translate("Miku", "未知的外部下载器类型。");
     return c;
 }
 
@@ -110,7 +116,7 @@ void ExternalDownloader::send(const LibraryItem &item,bool stopOnCompletion,Call
         connect(reply,&QNetworkReply::downloadProgress,reply,[reply](qint64 received,qint64){if(received>32*1024*1024)reply->abort();});
         connect(reply,&QNetworkReply::finished,this,[this,reply,item,stopOnCompletion,callback=std::move(callback)]()mutable {
             const auto data=reply->readAll();const bool ok=reply->error()==QNetworkReply::NoError;const auto message=reply->errorString();reply->deleteLater();
-            if(!ok){ExternalResult failure;failure.retryable=true;callback(false,QStringLiteral("种子获取失败：")+message,failure);return;}
+            if(!ok){ExternalResult failure;failure.retryable=true;callback(false,QCoreApplication::translate("Miku", "种子获取失败：")+message,failure);return;}
             QString error;const QString path=TorrentEngine::saveTorrentFile(data,item.savePath,&error);
             if(path.isEmpty()){ExternalResult failure;failure.retryable=true;callback(false,error,failure);return;}
             launch(item,path,stopOnCompletion,std::move(callback));
@@ -118,7 +124,7 @@ void ExternalDownloader::send(const LibraryItem &item,bool stopOnCompletion,Call
     } else if(input.startsWith("magnet:"))launch(item,input,stopOnCompletion,std::move(callback));
     else {
         QFile file(url.isLocalFile()?url.toLocalFile():input);
-        if(!file.open(QIODevice::ReadOnly)){ExternalResult failure;failure.retryable=true;callback(false,QStringLiteral("找不到可用的磁力链接或种子文件。"),failure);return;}
+        if(!file.open(QIODevice::ReadOnly)){ExternalResult failure;failure.retryable=true;callback(false,QCoreApplication::translate("Miku", "找不到可用的磁力链接或种子文件。"),failure);return;}
         const QString path=TorrentEngine::saveTorrentFile(file.readAll(),item.savePath,&error);
         if(path.isEmpty()){ExternalResult failure;failure.retryable=true;callback(false,error,failure);return;}
         launch(item,path,stopOnCompletion,std::move(callback));
@@ -133,8 +139,8 @@ void ExternalDownloader::launch(const LibraryItem &item,const QString &input,boo
         try {
             const auto params=lt::load_torrent_file(input.toStdString());const auto &hash=params.ti->info_hashes();
             const QString actual=QString::fromLatin1(hash.has_v1()?QByteArray(hash.v1.data(),20).toHex():QByteArray(hash.v2.data(),32).toHex());
-            if(!result.hash.isEmpty()&&actual!=result.hash){callback(false,QStringLiteral("种子内容与资源 hash 不一致，已停止发送。"),{});return;}
-            result.hash=actual;result.torrentFile=input;const auto &files=params.ti->layout();QSet<QString> assigned;
+            if(!result.hash.isEmpty()&&actual!=result.hash){callback(false,QCoreApplication::translate("Miku", "种子内容与资源 hash 不一致，已停止发送。"),{});return;}
+            result.hash=actual;result.torrentFile=input;const auto &files=ltcompat::layout(*params.ti);QSet<QString> assigned;
             result.fileCount=files.num_files();
             const QSet<QString> wanted(item.onlyEpisodes.begin(),item.onlyEpisodes.end());int videos=0;
             for(lt::file_index_t n{0};n<files.end_file();++n) {
@@ -150,7 +156,7 @@ void ExternalDownloader::launch(const LibraryItem &item,const QString &input,boo
                 }
                 if(selected)indexes.append(QString::number(int(n)+1));
             }
-            if(videos==0){callback(false,QStringLiteral("种子中没有可确认的缺集视频，已阻止可能的重复下载。"),{});return;}
+            if(videos==0){callback(false,QCoreApplication::translate("Miku", "种子中没有可确认的缺集视频，已阻止可能的重复下载。"),{});return;}
             result.episodes=QStringList(assigned.begin(),assigned.end());
         } catch(const std::exception &e){callback(false,QString::fromUtf8(e.what()),{});return;}
     } else if(!item.onlyEpisodes.isEmpty()) {
@@ -159,17 +165,17 @@ void ExternalDownloader::launch(const LibraryItem &item,const QString &input,boo
         requiresSelection=true;
     }
     if(requiresSelection&&((!m_prepareOnly&&item.downloader!="aria2")||result.torrentFile.isEmpty())) {
-        callback(false,QStringLiteral("此合集需要选择缺集文件，当前外部下载器的启动方式无法保证去重。请改选单集资源，或使用内置下载器；本地种子也可使用 aria2。"),{});return;
+        callback(false,QCoreApplication::translate("Miku", "此合集需要选择缺集文件，当前外部下载器的启动方式无法保证去重。请改选单集资源，或使用内置下载器；本地种子也可使用 aria2。"),{});return;
     }
     if(!result.hash.isEmpty()) {
         bool exists=m_sentHashes.contains(result.hash);
         for(const auto &i:m_library->items())if(i.key!=item.key&&i.hash==result.hash
             &&(i.phase=="external"||i.phase=="external_paused"||i.phase=="external_pending"||i.phase=="downloading"||i.phase=="paused"||i.complete))exists=true;
-        if(exists){callback(false,QStringLiteral("相同种子已经提交过，已跳过重复任务。"),{});return;}
+        if(exists){callback(false,QCoreApplication::translate("Miku", "相同种子已经提交过，已跳过重复任务。"),{});return;}
     }
     if(m_prepareOnly){result.selectedIndexes=requiresSelection?indexes:QStringList{};callback(true,{},result);return;}
     QString error;const auto cmd=command(item,input,requiresSelection?indexes:QStringList{},stopOnCompletion,&error);
-    if(!error.isEmpty()||!m_launcher(cmd,&error)){callback(false,QStringLiteral("无法启动外部下载器：")+error,{});return;}
+    if(!error.isEmpty()||!m_launcher(cmd,&error)){callback(false,QCoreApplication::translate("Miku", "无法启动外部下载器：")+error,{});return;}
     if(!result.hash.isEmpty())m_sentHashes.insert(result.hash);
     callback(true,{},result);
 }
@@ -183,7 +189,7 @@ QVector<LibraryFile> ExternalDownloader::verifyFiles(const LibraryItem &item)
         if(!info->info_hashes().has_v1()||info->num_pieces()==0)return {};
         const QString hashId=QString::fromLatin1(QByteArray(info->info_hashes().v1.data(),20).toHex());
         if(!item.hash.isEmpty()&&item.hash.compare(hashId,Qt::CaseInsensitive)!=0)return {};
-        const auto &files=info->layout();const QString root=QDir(item.savePath).absolutePath();
+        const auto &files=ltcompat::layout(*info);const QString root=QDir(item.savePath).absolutePath();
         QStringList paths;QVector<qint64> modified;
         for(lt::file_index_t n{0};n<files.end_file();++n) {
             const QString path=QDir::cleanPath(QDir(root).absoluteFilePath(QString::fromStdString(files.file_path(n))));
@@ -226,7 +232,7 @@ void ExternalDownloader::checkLocalFiles()
         if(item.phase!="external"||item.torrentFile.isEmpty()||item.files.isEmpty())continue;
         bool ready=true;QString stamp;
         try {
-            const auto meta=lt::load_torrent_file(item.torrentFile.toStdString());const auto &layout=meta.ti->layout();
+            const auto meta=lt::load_torrent_file(item.torrentFile.toStdString());const auto &layout=ltcompat::layout(*meta.ti);
             const QString root=QDir(item.savePath).absolutePath();
             for(lt::file_index_t n{0};n<layout.end_file();++n) {
                 if(layout.pad_file_at(n)||layout.file_size(n)==0)continue;

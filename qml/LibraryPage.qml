@@ -4,7 +4,7 @@ import QtQuick
 
 Scaffold {
     id: page
-    title: "我的追番"
+    title: qsTr("我的追番")
     subtitle: App.library.status
     scrolled: posters.scrolled
     readonly property bool shown: enabled
@@ -12,16 +12,16 @@ Scaffold {
     Component.onCompleted: App.library.active = true
     toolbar: [
         Segmented {
-            items: [{ text: "全部", value: 0 }, { text: "追番", value: 1 }, { text: "已下载", value: 2 }]
+            items: [{ text: qsTr("全部"), value: 0 }, { text: qsTr("追番"), value: 1 }, { text: qsTr("已下载"), value: 2 }]
             value: App.library.scope
             onActivated: value => App.library.scope = value
         },
         NxButton {
-            text: App.library.checking ? "检查中…" : "检查追更"
+            text: App.library.checking ? qsTr("检查中…") : qsTr("检查追更")
             iconName: "refresh"
             busy: App.library.checking
             enabled: !App.library.checking
-            tip: "立即检查下载过的番剧在同一字幕组是否有新集"
+            tip: qsTr("立即检查下载过的番剧在同一字幕组是否有新集")
             onClicked: App.library.checkUpdatesRequested()
         }
     ]
@@ -30,7 +30,7 @@ Scaffold {
         anchors.fill: parent
         controller: App.library
         emptyIcon: "library"
-        emptyActionText: "搜索番剧"
+        emptyActionText: qsTr("搜索番剧")
         onEmptyAction: App.selectPage(1)
     }
 }

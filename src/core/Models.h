@@ -157,6 +157,7 @@ struct DownloadTask {
     int seeders = 0;
     int leechers = 0;
     qint64 eta = -1;
+    bool sequential = false;
     QString infoHash;
     QString qbtHash;
     QString animeId;

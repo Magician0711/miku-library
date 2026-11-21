@@ -30,7 +30,7 @@ bool writeFile(const QString &path, const QByteArray &data, QString *error)
 {
     QSaveFile file(path);
     if (file.open(QIODevice::WriteOnly) && file.write(data) == data.size() && file.commit()) return true;
-    if (error) *error = QStringLiteral("无法写入 %1：%2").arg(QDir::toNativeSeparators(path), file.errorString());
+    if (error) *error = QCoreApplication::translate("Miku", "无法写入 %1：%2").arg(QDir::toNativeSeparators(path), file.errorString());
     return false;
 }
 }
@@ -64,22 +64,22 @@ bool load(const QString &path, QJsonObject *backup, QString *error)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        if (error) *error = QStringLiteral("无法打开文件：%1").arg(file.errorString());
+        if (error) *error = QCoreApplication::translate("Miku", "无法打开文件：%1").arg(file.errorString());
         return false;
     }
     QJsonParseError parse{};
     const auto object = QJsonDocument::fromJson(file.readAll(), &parse).object();
     if (parse.error != QJsonParseError::NoError || object.value(QStringLiteral("format")).toString() != QStringLiteral("miku-library-backup")) {
-        if (error) *error = QStringLiteral("这不是 Miku Library 的备份文件。");
+        if (error) *error = QCoreApplication::translate("Miku", "这不是 Miku Library 的备份文件。");
         return false;
     }
     if (object.value(QStringLiteral("version")).toInt() > kVersion) {
-        if (error) *error = QStringLiteral("这份备份来自更新版本的 Miku Library，请先升级软件。");
+        if (error) *error = QCoreApplication::translate("Miku", "这份备份来自更新版本的 Miku Library，请先升级软件。");
         return false;
     }
     const auto library = object.value(QStringLiteral("library")).toObject();
     if (!library.isEmpty() && library.value(QStringLiteral("schema_version")).toInt() != 1) {
-        if (error) *error = QStringLiteral("备份中的下载记录格式无法识别。");
+        if (error) *error = QCoreApplication::translate("Miku", "备份中的下载记录格式无法识别。");
         return false;
     }
     if (backup) *backup = object;
@@ -89,10 +89,10 @@ bool load(const QString &path, QJsonObject *backup, QString *error)
 QString summary(const QJsonObject &backup)
 {
     const auto created = QDateTime::fromString(backup.value(QStringLiteral("created")).toString(), Qt::ISODate).toLocalTime();
-    return QStringLiteral("%1 部追番 · %2 条下载记录 · 备份于 %3")
+    return QCoreApplication::translate("Miku", "%1 部追番 · %2 条下载记录 · 备份于 %3")
         .arg(backup.value(QStringLiteral("followed")).toArray().size())
         .arg(backup.value(QStringLiteral("library")).toObject().value(QStringLiteral("downloads")).toArray().size())
-        .arg(created.isValid() ? created.toString(QStringLiteral("yyyy-MM-dd HH:mm")) : QStringLiteral("未知时间"));
+        .arg(created.isValid() ? created.toString(QStringLiteral("yyyy-MM-dd HH:mm")) : QCoreApplication::translate("Miku", "未知时间"));
 }
 
 bool restore(const QJsonObject &backup, const QString &dataDir, QVector<int> *followed, QString *error)

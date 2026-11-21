@@ -4,7 +4,7 @@ import QtQuick
 
 Scaffold {
     id: page
-    title: "搜索番剧"
+    title: qsTr("搜索番剧")
     subtitle: App.search.status
     scrolled: posters.scrolled
     fixedHeight: 56
@@ -46,7 +46,7 @@ Scaffold {
             width: parent.width - sort.width - 16
             height: 44
             radius: 22
-            color: T.surface
+            color: T.contentSurface
             border.width: input.activeFocus ? 2 : 0
             border.color: T.accent
             Shadow { blur: 8; offset: 2 }
@@ -58,8 +58,8 @@ Scaffold {
                 height: 40
                 plain: true
                 clearable: true
-                placeholderText: "输入中文、日文或英文番名，按回车搜索"
-                Accessible.name: "番剧名称"
+                placeholderText: qsTr("输入中文、日文或英文番名，按回车搜索")
+                Accessible.name: qsTr("番剧名称")
                 Component.onCompleted: font.pixelSize = 15
                 onAccepted: page.submit()
                 onInputMethodComposingChanged: {
@@ -77,9 +77,9 @@ Scaffold {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             items: [
-                { text: "最新", value: 0, tip: "按播出时间从新到旧，同一年份评分高的在前" },
-                { text: "评分", value: 1, tip: "按 Bangumi 评分从高到低" },
-                { text: "相关度", value: 2, tip: "按与搜索词的匹配程度" }
+                { text: qsTr("最新"), value: 0, tip: qsTr("按播出时间从新到旧，同一年份评分高的在前") },
+                { text: qsTr("评分"), value: 1, tip: qsTr("按 Bangumi 评分从高到低") },
+                { text: qsTr("相关度"), value: 2, tip: qsTr("按与搜索词的匹配程度") }
             ]
             value: App.search.sort
             onActivated: value => App.search.sort = value

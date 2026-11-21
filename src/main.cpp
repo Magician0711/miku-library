@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "app/AppController.h"
+
+#include <QCoreApplication>
 #include "app/DialogHub.h"
 #include "app/Format.h"
 #include "app/ImageProviders.h"
+#include "app/LanguageController.h"
 #include "app/NativeDialogs.h"
+#include "app/Platform.h"
 #include "app/PlayerController.h"
 #include "app/StartupFlow.h"
 #include "app/ThemeController.h"
@@ -37,9 +41,11 @@
 #include <QTimer>
 #include <QtQml/qqmlextensionplugin.h>
 
+#ifdef Q_OS_WIN
 #define NOMINMAX
 #include <objbase.h>
 #include <windows.h>
+#endif
 
 Q_IMPORT_QML_PLUGIN(MikuLibraryPlugin)
 
@@ -91,7 +97,7 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
 
 QString catalogPath()
 {
-    const QString besideExe = QCoreApplication::applicationDirPath() + QStringLiteral("/config/anime_sites.json");
+    const QString besideExe = AppConfig::resourcePath(QStringLiteral("config/anime_sites.json"));
     if (QFile::exists(besideExe))
         return besideExe;
     const QString sourceTree = QDir::currentPath() + QStringLiteral("/config/anime_sites.json");
@@ -108,20 +114,23 @@ int main(int argc, char *argv[])
     QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
     // The window draws its own corners, at the radius of the rest of the interface.
     QQuickWindow::setDefaultAlphaBuffer(true);
-    QGuiApplication app(argc, argv);
+    Platform::prepareGraphics();
+    PlatformApplication app(argc, argv);
+#ifdef Q_OS_WIN
     // The system file pickers are COM objects.
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     // Releases ship only this TLS backend. A Qt installation on the plugin path adds
     // OpenSSL, and through a local proxy about half of its first connections then
     // fail with "Connection closed", so every way of running the app must use this one.
     QSslSocket::setActiveBackend(QStringLiteral("schannel"));
+#endif
 
     app.setApplicationName(QStringLiteral("Miku Library"));
     app.setApplicationVersion(QStringLiteral(MIKU_LIBRARY_VERSION));
     app.setOrganizationName(QStringLiteral("miku-library"));
     app.setWindowIcon(appIcon());
     QFont font;
-    font.setFamilies({QStringLiteral("Segoe UI Variable"), QStringLiteral("Segoe UI"), QStringLiteral("Microsoft YaHei UI")});
+    font.setFamilies(LanguageController::fontFamilies(QStringLiteral("zh-CN")));
     font.setPixelSize(13);
     app.setFont(font);
     // The window can close to the tray; quitting is explicit (tray menu or the close prompt).
@@ -131,17 +140,21 @@ int main(int argc, char *argv[])
     InstanceGuard instance(AppConfig::dataDir());
     // Windows only lets the running copy come to the front if this one, which the user
     // has just started, gives it leave to.
+#ifdef Q_OS_WIN
     AllowSetForegroundWindow(ASFW_ANY);
+#endif
     const auto instanceResult = instance.acquire(app.arguments());
     if (instanceResult == InstanceGuard::Forwarded)
         return 0;
     if (instanceResult == InstanceGuard::Busy) {
-        NativeDialogs::alert(QStringLiteral("Miku Library 已在运行"), QStringLiteral("现有实例正在启动或忙碌，请稍后重试。"), false);
+        NativeDialogs::alert(QCoreApplication::translate("Miku", "Miku Library 已在运行"), QCoreApplication::translate("Miku", "现有实例正在启动或忙碌，请稍后重试。"), false);
         return 0;
     }
     qInstallMessageHandler(messageHandler);
 
     AppConfig config = AppConfig::load();
+    // Before any window or message, so that everything starts in the chosen language.
+    LanguageController language(&config);
     HttpClient::applyProxy(config.proxyMode, config.proxyHost, config.proxyPort);
     ThemeController theme(config.appearance);
     WindowChrome chrome;
@@ -149,12 +162,15 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &theme);
     engine.rootContext()->setContextProperty(QStringLiteral("Chrome"), &chrome);
+    engine.rootContext()->setContextProperty(QStringLiteral("Lang"), &language);
+    QObject::connect(&language, &LanguageController::changed, &engine, &QQmlEngine::retranslate);
     engine.addImageProvider(QStringLiteral("icon"), new IconProvider);
 
     // Quick start and usage declaration, once per declaration version.
     if (config.disclaimerAccepted < Notes::kDisclaimerVersion) {
         const QString proposed = config.hasSavedDownloadDirectory ? config.engine.savePath : AppConfig::defaultDownloadDirectory();
         StartupFlow guide(QStringLiteral("guide"), proposed);
+        QObject::connect(&language, &LanguageController::changed, &guide, &StartupFlow::textsChanged);
         if (!guide.run(&engine))
             return 0;
         // A different folder picked in the guide; the default is created further down.
@@ -168,12 +184,13 @@ int main(int argc, char *argv[])
         // The guide's theme picker applies live; keep whatever was chosen there.
         config.appearance = theme.mode();
         if (!config.save())
-            NativeDialogs::alert(QStringLiteral("设置未保存"), QStringLiteral("无法写入配置文件，下次启动会再次显示使用声明。"), false);
+            NativeDialogs::alert(QCoreApplication::translate("Miku", "设置未保存"), QCoreApplication::translate("Miku", "无法写入配置文件，下次启动会再次显示使用声明。"), false);
     }
     QString directoryError;
     const auto directoryState = config.prepareDownloadDirectory(&directoryError);
     if (directoryState == AppConfig::DownloadDirectoryState::MissingSaved || directoryState == AppConfig::DownloadDirectoryState::Error) {
         StartupFlow replace(QStringLiteral("directory"), config.engine.savePath, directoryError);
+        QObject::connect(&language, &LanguageController::changed, &replace, &StartupFlow::textsChanged);
         if (!replace.run(&engine))
             return 0;
         config.engine.savePath = replace.downloadDir();
@@ -181,18 +198,18 @@ int main(int argc, char *argv[])
         config.hasSavedDownloadDirectory = true;
     }
     if (directoryState != AppConfig::DownloadDirectoryState::Ready && !config.save()) {
-        NativeDialogs::alert(QStringLiteral("无法保存下载目录"), QStringLiteral("下载目录设置未能保存，请检查配置文件的写入权限后重新打开软件。"));
+        NativeDialogs::alert(QCoreApplication::translate("Miku", "无法保存下载目录"), QCoreApplication::translate("Miku", "下载目录设置未能保存，请检查配置文件的写入权限后重新打开软件。"));
         return 1;
     }
 
     const QString userCatalog = QDir(AppConfig::dataDir()).filePath(QStringLiteral("anime_sites.json"));
     if (!QFile::exists(userCatalog) && !QFile::copy(catalogPath(), userCatalog)) {
-        NativeDialogs::alert(QStringLiteral("站点配置"), QStringLiteral("无法创建用户站点配置。"));
+        NativeDialogs::alert(QCoreApplication::translate("Miku", "站点配置"), QCoreApplication::translate("Miku", "无法创建用户站点配置。"));
         return 1;
     }
     Catalog catalog(userCatalog);
     if (!catalog.load()) {
-        NativeDialogs::alert(QStringLiteral("Miku Library"), QStringLiteral("找不到站点目录：\n%1").arg(catalogPath()));
+        NativeDialogs::alert(QStringLiteral("Miku Library"), QCoreApplication::translate("Miku", "找不到站点目录：\n%1").arg(catalogPath()));
         return 1;
     }
     catalog.startWatching();
@@ -200,7 +217,7 @@ int main(int argc, char *argv[])
     Database db(AppConfig::dataDir() + QStringLiteral("/miku_library.db"));
     QString dbError;
     if (!db.init(&dbError)) {
-        NativeDialogs::alert(QStringLiteral("Miku Library"), QStringLiteral("数据库初始化失败：\n%1").arg(dbError));
+        NativeDialogs::alert(QStringLiteral("Miku Library"), QCoreApplication::translate("Miku", "数据库初始化失败：\n%1").arg(dbError));
         return 1;
     }
 
@@ -214,8 +231,9 @@ int main(int argc, char *argv[])
     const bool engineStarted = torrents.start(&engineError);
 
     AppController controller(&catalog, &db, &config, &http, &torrents, &aggregator, &bangumi, &theme, &chrome);
+    QObject::connect(&language, &LanguageController::changed, &controller, &AppController::retranslate);
     if (!engineStarted)
-        controller.dialogs()->message(QStringLiteral("下载引擎"), QStringLiteral("内部 libtorrent 引擎启动失败：\n%1").arg(engineError), QStringLiteral("warning"));
+        controller.dialogs()->message(QCoreApplication::translate("Miku", "下载引擎"), QCoreApplication::translate("Miku", "内部 libtorrent 引擎启动失败：\n%1").arg(engineError), QStringLiteral("warning"));
 
     engine.addImageProvider(QStringLiteral("cover"), new CoverProvider(&images));
     engine.rootContext()->setContextProperty(QStringLiteral("App"), &controller);
@@ -242,7 +260,7 @@ int main(int argc, char *argv[])
         QVector<int> followed;
         QString restoreError;
         if (!Backup::restore(restore, AppConfig::dataDir(), &followed, &restoreError)) {
-            NativeDialogs::alert(QStringLiteral("导入失败"), restoreError);
+            NativeDialogs::alert(QCoreApplication::translate("Miku", "导入失败"), restoreError);
             return result;
         }
         for (const int id : db.followedIds()) db.unfollow(id);

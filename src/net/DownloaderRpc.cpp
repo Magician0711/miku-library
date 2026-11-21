@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "DownloaderRpc.h"
+
+#include <QCoreApplication>
 #include "core/TitleParser.h"
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -54,7 +56,7 @@ void DownloaderRpc::wire(const QString &type,const QString &path,const QByteArra
     connect(reply,&QNetworkReply::downloadProgress,reply,[reply](qint64 n,qint64){if(n>32*1024*1024)reply->abort();});
     connect(reply,&QNetworkReply::finished,this,[reply,callback=std::move(callback)]{
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();const auto data=reply->readAll();const auto token=reply->rawHeader("X-Transmission-Session-Id");
-        const QString error=reply->error()==QNetworkReply::NoError?QString():QStringLiteral("连接失败（HTTP %1）：%2").arg(code).arg(reply->errorString());reply->deleteLater();callback(code,data,error,token);
+        const QString error=reply->error()==QNetworkReply::NoError?QString():QCoreApplication::translate("Miku", "连接失败（HTTP %1）：%2").arg(code).arg(reply->errorString());reply->deleteLater();callback(code,data,error,token);
     });
 }
 
@@ -63,7 +65,7 @@ void DownloaderRpc::qb(const QString &method,const QMap<QString,QString> &values
     const auto p=m_config->downloader.rpcProfile("qbittorrent");const QString identity=p.url+"|"+p.username+"|"+p.password;
     if(!p.username.isEmpty()&&m_qbLogin!=identity) {
         wire("qbittorrent","/api/v2/auth/login",form({{"username",p.username},{"password",p.password}}),"application/x-www-form-urlencoded",[this,identity,method,values,callback,get](int code,QByteArray data,QString error,QByteArray){
-            if(code!=200||data.trimmed()!="Ok."){callback(false,{},error.isEmpty()?QStringLiteral("qBittorrent 登录失败，请核对 Web UI 凭据。"):error);return;}
+            if(code!=200||data.trimmed()!="Ok."){callback(false,{},error.isEmpty()?QCoreApplication::translate("Miku", "qBittorrent 登录失败，请核对 Web UI 凭据。"):error);return;}
             m_qbLogin=identity;qb(method,values,callback,get);
         });return;
     }
@@ -84,9 +86,9 @@ void DownloaderRpc::call(const QString &type,const QString &method,QJsonValue pa
     wire(type,{},QJsonDocument(body).toJson(QJsonDocument::Compact),"application/json",[this,type,method,params,callback,attempt](int code,QByteArray data,QString error,QByteArray token){
         if(type=="transmission"&&code==409&&!token.isEmpty()&&attempt<1){m_transmissionSession=token;call(type,method,params,callback,attempt+1);return;}
         const auto doc=QJsonDocument::fromJson(data);const auto object=doc.object();
-        if(code<200||code>=300||!doc.isObject()||object.contains("error")){callback(false,{},error.isEmpty()?QStringLiteral("下载器接口拒绝请求，请核对连接设置和接口版本。"):error);return;}
+        if(code<200||code>=300||!doc.isObject()||object.contains("error")){callback(false,{},error.isEmpty()?QCoreApplication::translate("Miku", "下载器接口拒绝请求，请核对连接设置和接口版本。"):error);return;}
         if(type=="transmission") {
-            if(object.value("result").toString()!="success"){callback(false,{},QStringLiteral("Transmission 拒绝请求：")+object.value("result").toString());return;}
+            if(object.value("result").toString()!="success"){callback(false,{},QCoreApplication::translate("Miku", "Transmission 拒绝请求：")+object.value("result").toString());return;}
             callback(true,transmissionKeys(object.value("arguments"),false),{});
         } else callback(true,object.value("result"),{});
     });
@@ -96,11 +98,11 @@ void DownloaderRpc::add(const LibraryItem &item,bool stop,ExternalDownloader::Ca
 {
     m_prepare.send(item,stop,[this,item,stop,callback](bool valid,QString message,ExternalResult prepared)mutable {
         if(!valid){callback(false,message,prepared);return;}
-        if(item.downloader!="aria2"&&prepared.hash.isEmpty()){callback(false,QStringLiteral("此磁力链接缺少可管理的哈希标识，请选择对应的种子文件。"),prepared);return;}
+        if(item.downloader!="aria2"&&prepared.hash.isEmpty()){callback(false,QCoreApplication::translate("Miku", "此磁力链接缺少可管理的哈希标识，请选择对应的种子文件。"),prepared);return;}
         QFile file(prepared.torrentFile);QByteArray data;if(!prepared.torrentFile.isEmpty()&&file.open(QIODevice::ReadOnly))data=file.readAll();
         Reply finish=[this,item,prepared,callback](bool ok,QJsonValue value,QString error)mutable {
             if(item.downloader=="aria2")prepared.remoteId=value.toString();else prepared.remoteId=prepared.hash;
-            if(ok&&prepared.remoteId.isEmpty()){callback(false,QStringLiteral("下载器未返回可管理的任务标识。"),prepared);return;}
+            if(ok&&prepared.remoteId.isEmpty()){callback(false,QCoreApplication::translate("Miku", "下载器未返回可管理的任务标识。"),prepared);return;}
             callback(ok,error,prepared);QTimer::singleShot(0,this,&DownloaderRpc::poll);
         };
         const auto &limits=m_config->engine;
@@ -131,7 +133,7 @@ void DownloaderRpc::add(const LibraryItem &item,bool stop,ExternalDownloader::Ca
                 auto *reply=m_net.post(request,parts);parts->setParent(reply);
                 connect(reply,&QNetworkReply::finished,this,[this,reply,prepared,finish]()mutable {
                     const bool ok=reply->error()==QNetworkReply::NoError&&reply->readAll().trimmed()=="Ok.";reply->deleteLater();
-                    if(!ok){finish(false,{},QStringLiteral("qBittorrent 添加任务失败。"));return;}
+                    if(!ok){finish(false,{},QCoreApplication::translate("Miku", "qBittorrent 添加任务失败。"));return;}
                     auto start=[this,prepared,finish]{qb("torrents/start",{{"hashes",prepared.hash}},[this,prepared,finish](bool ok,QJsonValue v,QString e){if(ok)finish(ok,v,e);else qb("torrents/resume",{{"hashes",prepared.hash}},finish);});};
                     if(prepared.selectedIndexes.isEmpty()){start();return;}
                     QStringList all,selected;for(int i=0;i<prepared.fileCount;++i)all.append(QString::number(i));for(const auto &index:prepared.selectedIndexes)selected.append(QString::number(index.toInt()-1));
@@ -144,10 +146,10 @@ void DownloaderRpc::add(const LibraryItem &item,bool stop,ExternalDownloader::Ca
 
 void DownloaderRpc::control(const QString &key,const QString &action,std::function<void(bool,QString)> callback)
 {
-    const auto item=m_library->item(key);if(!item||!manageable(*item)){if(callback)callback(false,QStringLiteral("请先启用此下载器的本机连接管理。"));return;}
+    const auto item=m_library->item(key);if(!item||!manageable(*item)){if(callback)callback(false,QCoreApplication::translate("Miku", "请先启用此下载器的本机连接管理。"));return;}
     auto done=[this,key,action,callback](bool ok,QJsonValue,QString e){
         if(ok)if(auto record=m_library->item(key)){record->phase=action=="remove"?"cancelled":record->complete?"complete":action=="pause"?"external_paused":"external";QString error;if(!m_library->put(*record,&error)){ok=false;e=error;}}
-        if(!ok&&e.isEmpty())e=QStringLiteral("下载器未接受操作。");if(callback)callback(ok,e);else if(!ok)emit error(e);emit changed();
+        if(!ok&&e.isEmpty())e=QCoreApplication::translate("Miku", "下载器未接受操作。");if(callback)callback(ok,e);else if(!ok)emit error(e);emit changed();
     };
     const QString id=item->remoteId.isEmpty()?item->hash:item->remoteId;
     if(item->downloader=="qbittorrent") {
@@ -170,7 +172,7 @@ void DownloaderRpc::poll()
         m_busy.insert(item.key);
         auto done=[this,item](bool ok,QJsonValue value,QString error){
             m_busy.remove(item.key);
-            if(!ok){auto t=m_tasks.value(item.key);t.statusMessage=QStringLiteral("连接中断 · ")+error;m_tasks.insert(item.key,t);emit changed();return;}
+            if(!ok){auto t=m_tasks.value(item.key);t.statusMessage=QCoreApplication::translate("Miku", "连接中断 · ")+error;m_tasks.insert(item.key,t);emit changed();return;}
             QJsonObject status;
             if(item.downloader=="qbittorrent")status=first(value.toArray()).toObject();
             else if(item.downloader=="transmission")status=first(value.toObject().value("torrents").toArray()).toObject();
@@ -197,7 +199,7 @@ void DownloaderRpc::synchronize(const LibraryItem &item,const QJsonObject &s)
         t.size=s.value("totalLength").toString().toLongLong();const qint64 bytes=s.value("completedLength").toString().toLongLong();t.progress=t.size?double(bytes)*100/t.size:0;t.dlSpeed=s.value("downloadSpeed").toString().toLongLong();t.upSpeed=s.value("uploadSpeed").toString().toLongLong();paused=s.value("status").toString()=="paused";complete=t.size>0&&bytes==t.size&&(s.value("status").toString()=="complete"||s.value("seeder").toString()=="true");
     }
     t.status=complete?DownloadStatus::Completed:paused?DownloadStatus::Paused:DownloadStatus::Downloading;
-    t.statusMessage=(complete?QStringLiteral("已完成"):paused?QStringLiteral("已暂停"):QStringLiteral("下载中"))+QStringLiteral(" · ")+DownloaderSettings::name(item.downloader);m_tasks.insert(item.key,t);emit changed();
+    t.statusMessage=(complete?QCoreApplication::translate("Miku", "已完成"):paused?QCoreApplication::translate("Miku", "已暂停"):QCoreApplication::translate("Miku", "下载中"))+QStringLiteral(" · ")+DownloaderSettings::name(item.downloader);m_tasks.insert(item.key,t);emit changed();
     if(!complete&&current->phase!=(paused?"external_paused":"external")){current->phase=paused?"external_paused":"external";m_library->put(*current);}
     if(complete&&!current->complete)files(*current,true);
     const bool alreadyStopped=item.downloader=="aria2"&&s.value("status").toString()=="complete";

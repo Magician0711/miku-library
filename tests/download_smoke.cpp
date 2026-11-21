@@ -386,10 +386,19 @@ int main(int argc, char **argv)
         {
             engine.pause(hash);
             waitUntil([&]{const auto t=engine.listTorrents();return t.size()==1&&t[0].status==DownloadStatus::Paused;});
+            // Windows refuses to delete a file that is open; elsewhere a file can only be
+            // kept by a folder that may not be written to.
             QFile inUse(locked+"/"+fileName);inUse.open(QIODevice::ReadOnly);
+#ifndef Q_OS_WIN
+            const auto permissions=QFile::permissions(locked);
+            QFile::setPermissions(locked,QFile::ReadOwner|QFile::ExeOwner);
+#endif
             engine.remove(hash,true);
             check(waitUntil([&]{return engineErrors.join("\n").contains(QStringLiteral("部分文件没有删除"));})&&QFile::exists(locked+"/"+fileName),
                 "a file that cannot be deleted is reported");
+#ifndef Q_OS_WIN
+            QFile::setPermissions(locked,permissions);
+#endif
         }
         waitUntil([&]{return engine.listTorrents().isEmpty();});
         QObject::disconnect(errorWatch);

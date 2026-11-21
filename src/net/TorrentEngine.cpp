@@ -34,6 +34,7 @@
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/info_hash.hpp>
 #include <libtorrent/load_torrent.hpp>
+#include "LibtorrentCompat.h"
 #include <libtorrent/magnet_uri.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_status.hpp>
@@ -71,6 +72,14 @@ QString hashToQString(const lt::info_hash_t &hashes)
         : QString::fromLatin1(QByteArray(hashes.v2.data(), 32).toHex());
 }
 
+// What this app names the torrents it saves beside the data. macOS and Linux hide a file
+// by its leading dot; Windows has an attribute for it (hideFile).
+#ifdef Q_OS_WIN
+const QString kSavedPrefix = QStringLiteral("torrent-");
+#else
+const QString kSavedPrefix = QStringLiteral(".torrent-");
+#endif
+
 // Saved torrents stay beside the video so tasks can resume and keep seeding, but
 // they are bookkeeping: keep them out of the user's folder view.
 void hideFile(const QString &path)
@@ -92,7 +101,7 @@ QString saveTorrentData(const QByteArray &data, const QString &savePath, QString
     try {
         params = lt::load_torrent_buffer(lt::span<char const>(data.constData(), data.size()));
     } catch (const std::exception &ex) {
-        if (error) *error = QStringLiteral("无效的种子文件：%1").arg(QString::fromUtf8(ex.what()));
+        if (error) *error = QCoreApplication::translate("Miku", "无效的种子文件：%1").arg(QString::fromUtf8(ex.what()));
         return {};
     }
     QString name = QString::fromStdString(params.ti->name());
@@ -100,10 +109,10 @@ QString saveTorrentData(const QByteArray &data, const QString &savePath, QString
     name = name.trimmed().left(64);
     if (!name.isEmpty() && name.back().isHighSurrogate()) name.chop(1);
     // Prefix also avoids Windows reserved device names; hash separates equal titles.
-    const QString stem = QStringLiteral("torrent-%1-%2").arg(name, hashToQString(params.ti->info_hashes()));
+    const QString stem = kSavedPrefix + QStringLiteral("%1-%2").arg(name, hashToQString(params.ti->info_hashes()));
     QDir dir(savePath);
     if (!dir.mkpath(QStringLiteral("."))) {
-        if (error) *error = QStringLiteral("无法创建下载目录：%1").arg(savePath);
+        if (error) *error = QCoreApplication::translate("Miku", "无法创建下载目录：%1").arg(savePath);
         return {};
     }
     QString path;
@@ -116,7 +125,7 @@ QString saveTorrentData(const QByteArray &data, const QString &savePath, QString
     }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
-        if (error) *error = QStringLiteral("无法保存种子文件：%1\n%2").arg(path, file.errorString());
+        if (error) *error = QCoreApplication::translate("Miku", "无法保存种子文件：%1\n%2").arg(path, file.errorString());
         return {};
     }
     hideFile(path);
@@ -133,7 +142,7 @@ void setStartFlags(lt::add_torrent_params &params, bool paused, bool queueing)
 
 std::vector<lt::download_priority_t> episodePriorities(const lt::torrent_info &info,const QStringList &wanted,QString *error)
 {
-    const auto &files=info.layout();
+    const auto &files=ltcompat::layout(info);
     std::vector<lt::download_priority_t> priorities(files.num_files(),lt::dont_download);
     const QSet<QString> selected(wanted.begin(),wanted.end());
     int videos=0;
@@ -155,7 +164,7 @@ std::vector<lt::download_priority_t> episodePriorities(const lt::torrent_info &i
             priorities[int(n)]=lt::default_priority;
         }
     }
-    if(!videos && error)*error=QStringLiteral("合集中没有可确认的缺集视频，已阻止可能的重复下载。");
+    if(!videos && error)*error=QCoreApplication::translate("Miku", "合集中没有可确认的缺集视频，已阻止可能的重复下载。");
     return videos?priorities:std::vector<lt::download_priority_t>{};
 }
 
@@ -338,9 +347,11 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
     // round-trips per torrent; this runs several times a second.
     const auto statuses = m_session->get_torrent_status([](const lt::torrent_status &) { return true; },
         lt::torrent_handle::query_name | lt::torrent_handle::query_save_path);
-    QSet<QString> autoStopped;
-    for (const auto &entry : m_entries)
+    QSet<QString> autoStopped, sequential;
+    for (const auto &entry : m_entries) {
         if (entry.autoStopped) autoStopped.insert(entry.infoHash);
+        if (entry.sequential) sequential.insert(entry.infoHash.toLower());
+    }
     tasks.reserve(static_cast<int>(statuses.size()));
     for (const auto &status : statuses) {
         DownloadTask task;
@@ -362,6 +373,12 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
         }
         task.infoHash = hashToQString(status.info_hashes);
         task.qbtHash = task.infoHash;
+        // A re-added task (magnet turned .torrent, restart) starts without the flag; put it back.
+        task.sequential = sequential.contains(task.infoHash.toLower());
+        if (task.sequential != bool(status.flags & lt::torrent_flags::sequential_download)) {
+            if (task.sequential) status.handle.set_flags(lt::torrent_flags::sequential_download);
+            else status.handle.unset_flags(lt::torrent_flags::sequential_download);
+        }
 
         const bool paused = static_cast<bool>(status.flags & lt::torrent_flags::paused);
         // A task stopped on completion may have released its piece state; trust
@@ -381,12 +398,12 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
                 QString::fromUtf8(status.errc.message().c_str()));
         } else if ((status.is_finished||cachedComplete) && m_settings.stopOnCompletion) {
             task.status = DownloadStatus::Completed;
-            task.statusMessage=QStringLiteral("已完成 · 传输已停止");
+            task.statusMessage=QCoreApplication::translate("Miku", "已完成 · 传输已停止");
         } else if (paused) {
             task.status = DownloadStatus::Paused;
         } else if (m_metadataPending.contains(task.infoHash)) {
             task.status = DownloadStatus::Downloading;
-            task.statusMessage = QStringLiteral("获取种子中");
+            task.statusMessage = QCoreApplication::translate("Miku", "获取种子中");
         } else if (status.state == lt::torrent_status::seeding
                    || status.state == lt::torrent_status::finished) {
             task.status = DownloadStatus::Seeding;
@@ -394,8 +411,8 @@ QVector<DownloadTask> TorrentEngine::listTorrents() const
                    || status.state == lt::torrent_status::downloading_metadata) {
             task.status = DownloadStatus::Downloading;
             if(status.num_peers==0)task.statusMessage=m_trackerWarnings.contains(task.infoHash)
-                ?QStringLiteral("等待节点 · ")+m_trackerWarnings.value(task.infoHash):QStringLiteral("正在发现下载节点");
-            else if(status.download_payload_rate==0)task.statusMessage=QStringLiteral("已连接 %1 个节点 · 等待可用分片").arg(status.num_peers);
+                ?QCoreApplication::translate("Miku", "等待节点 · ")+m_trackerWarnings.value(task.infoHash):QCoreApplication::translate("Miku", "正在发现下载节点");
+            else if(status.download_payload_rate==0)task.statusMessage=QCoreApplication::translate("Miku", "已连接 %1 个节点 · 等待可用分片").arg(status.num_peers);
         } else {
             task.status = DownloadStatus::Pending;
         }
@@ -424,7 +441,7 @@ QVector<DownloadFile> TorrentEngine::filesOf(const lt::torrent_handle &handle,co
     const auto info=handle.torrent_file();if(!info)return files;
     std::vector<std::int64_t> progress;handle.file_progress(progress);
     const auto priorities=handle.get_file_priorities();
-    const auto &storage=info->layout();
+    const auto &storage=ltcompat::layout(*info);
     const QString root=QDir(savePath).absolutePath();
     for(lt::file_index_t n{0};n<storage.end_file();++n) {
         const QString path=QDir::cleanPath(QDir(root).absoluteFilePath(QString::fromStdString(storage.file_path(n))));
@@ -453,16 +470,16 @@ void TorrentEngine::addTorrentTracked(const QString &uri,const QString &savePath
 {
     if (!running()) {
         if (callback)
-            callback(false, QStringLiteral("下载引擎未启动"),{});
+            callback(false, QCoreApplication::translate("Miku", "下载引擎未启动"),{});
         return;
     }
     if (!QDir().mkpath(savePath)) {
-        if (callback) callback(false, QStringLiteral("无法创建下载目录"),{});
+        if (callback) callback(false, QCoreApplication::translate("Miku", "无法创建下载目录"),{});
         return;
     }
     QTemporaryFile probe(QDir(savePath).filePath(QStringLiteral(".nexus-write-XXXXXX")));
     if (!probe.open()) {
-        if (callback) callback(false, QStringLiteral("下载目录不可写：%1").arg(probe.errorString()),{});
+        if (callback) callback(false, QCoreApplication::translate("Miku", "下载目录不可写：%1").arg(probe.errorString()),{});
         return;
     }
     probe.close();
@@ -523,7 +540,7 @@ bool TorrentEngine::addMagnet(const QString &magnet, const QString &savePath, bo
     m_metadataPending.insert(hashString(handle));
     if (handle.torrent_file() && !saveMagnetTorrent(handle, error)) {
         handle.pause();
-        m_saveErrors.insert(hashString(handle), error ? *error : QStringLiteral("种子保存失败"));
+        m_saveErrors.insert(hashString(handle), error ? *error : QCoreApplication::translate("Miku", "种子保存失败"));
         emit changed();
         return false;
     }
@@ -547,7 +564,7 @@ bool TorrentEngine::addTorrentFile(const QString &path, const QString &savePath,
     const QString actualHash=hashToQString(params.ti->info_hashes());
     const auto hashes=params.ti->info_hashes();
     const QString v2=hashes.has_v2()?QString::fromLatin1(QByteArray(hashes.v2.data(),32).toHex()):QString();
-    if(!expectedHash.isEmpty()&&actualHash.compare(expectedHash,Qt::CaseInsensitive)!=0&&v2.compare(expectedHash,Qt::CaseInsensitive)!=0){if(error)*error=QStringLiteral("种子内容与资源哈希不一致，已阻止错误下载。");return false;}
+    if(!expectedHash.isEmpty()&&actualHash.compare(expectedHash,Qt::CaseInsensitive)!=0&&v2.compare(expectedHash,Qt::CaseInsensitive)!=0){if(error)*error=QCoreApplication::translate("Miku", "种子内容与资源哈希不一致，已阻止错误下载。");return false;}
     QStringList extraTrackers;
     params.tracker_tiers.resize(params.trackers.size(),0);
     auto candidates=trackers;
@@ -601,12 +618,12 @@ void TorrentEngine::fetchTorrent(const QString &url, const QString &savePath,
             ? QString() : reply->errorString();
         reply->deleteLater();
         if (!running()) {
-            if (callback) callback(false, QStringLiteral("下载引擎已停止"),{});
+            if (callback) callback(false, QCoreApplication::translate("Miku", "下载引擎已停止"),{});
             return;
         }
         if (!error.isEmpty() || data.isEmpty()) {
             if (callback)
-                callback(false, error.isEmpty() ? QStringLiteral("种子下载失败") : error,{});
+                callback(false, error.isEmpty() ? QCoreApplication::translate("Miku", "种子下载失败") : error,{});
             return;
         }
         QString addError;
@@ -622,7 +639,7 @@ bool TorrentEngine::saveMagnetTorrent(const lt::torrent_handle &handle, QString 
 {
     const QString hash = hashString(handle);
     try {
-        const auto params = handle.get_resume_data(lt::torrent_handle::save_info_dict);
+        const auto params = ltcompat::torrentParams(handle);
         const auto buffer = lt::write_torrent_file_buf(params, lt::write_flags::allow_missing_piece_layer);
         const QString savePath = QString::fromStdString(params.save_path);
         const QString path = saveTorrentData(QByteArray(buffer.data(), buffer.size()), savePath, error);
@@ -650,7 +667,7 @@ bool TorrentEngine::saveMagnetTorrent(const lt::torrent_handle &handle, QString 
         }
         return true;
     } catch (const std::exception &ex) {
-        if (error) *error = QStringLiteral("保存磁力种子失败：%1").arg(QString::fromUtf8(ex.what()));
+        if (error) *error = QCoreApplication::translate("Miku", "保存磁力种子失败：%1").arg(QString::fromUtf8(ex.what()));
         return false;
     }
 }
@@ -676,7 +693,7 @@ bool TorrentEngine::selectEpisodes(const QString &infoHash,const QStringList &ep
     if(!m_session||m_readds.contains(infoHash))return false;
     for(const auto &handle:m_session->get_torrents())if(hashString(handle).compare(infoHash,Qt::CaseInsensitive)==0) {
         const auto info=handle.torrent_file();
-        if(!info){if(error)*error=QStringLiteral("种子元数据尚未读取完成，请稍后更新。");return false;}
+        if(!info){if(error)*error=QCoreApplication::translate("Miku", "种子元数据尚未读取完成，请稍后更新。");return false;}
         if(!episodes.isEmpty()&&episodePriorities(*info,episodes,error).empty())return false;
         for(auto &entry:m_entries)if(entry.infoHash.compare(infoHash,Qt::CaseInsensitive)==0) {
             entry.onlyEpisodes=episodes;entry.paused=false;entry.autoStopped=false;
@@ -686,7 +703,7 @@ bool TorrentEngine::selectEpisodes(const QString &infoHash,const QStringList &ep
             m_session->remove_torrent(handle);return true;
         }
     }
-    if(error)*error=QStringLiteral("下载任务已不存在。");return false;
+    if(error)*error=QCoreApplication::translate("Miku", "下载任务已不存在。");return false;
 }
 
 bool TorrentEngine::resume(const QString &infoHash)
@@ -696,6 +713,9 @@ bool TorrentEngine::resume(const QString &infoHash)
     for (const auto &handle : m_session->get_torrents()) {
         if (hashString(handle).compare(infoHash, Qt::CaseInsensitive) == 0) {
             if(m_settings.stopOnCompletion&&handle.status().is_finished){stopCompleted(handle);emit changed();return true;}
+            // A disk or file error stops the task until it is cleared; resuming is the retry.
+            m_saveErrors.remove(infoHash);
+            handle.clear_error();
             updateEntryPaused(infoHash, false);
             if (m_metadataPending.contains(infoHash) && handle.torrent_file()) {
                 QString error;
@@ -746,22 +766,22 @@ bool TorrentEngine::remove(const QString &infoHash, bool deleteFiles)
 
 bool TorrentEngine::moveStorage(const QString &infoHash,const QString &newPath,QString *error)
 {
-    if(!m_session){if(error)*error=QStringLiteral("下载引擎未运行。");return false;}
+    if(!m_session){if(error)*error=QCoreApplication::translate("Miku", "下载引擎未运行。");return false;}
     for(const auto &handle:m_session->get_torrents()) {
         if(hashString(handle).compare(infoHash,Qt::CaseInsensitive)!=0)continue;
-        if(!QDir().mkpath(newPath)){if(error)*error=QStringLiteral("无法创建目录：%1").arg(newPath);return false;}
+        if(!QDir().mkpath(newPath)){if(error)*error=QCoreApplication::translate("Miku", "无法创建目录：%1").arg(newPath);return false;}
         // dont_replace keeps any file already at the destination instead of overwriting it.
         handle.move_storage(newPath.toStdString(),lt::move_flags_t::dont_replace);
         return true;
     }
-    if(error)*error=QStringLiteral("下载任务已不存在。");return false;
+    if(error)*error=QCoreApplication::translate("Miku", "下载任务已不存在。");return false;
 }
 
 void TorrentEngine::cleanUpDeleted(const QString &torrentFile,const QString &savePath)
 {
     // Only what this app saved beside the data: an imported original stays where it is.
     const QFileInfo torrent(torrentFile);
-    if(torrent.isFile()&&torrent.fileName().startsWith(QStringLiteral("torrent-"))&&QDir(torrent.absolutePath())==QDir(savePath))
+    if(torrent.isFile()&&torrent.fileName().startsWith(kSavedPrefix)&&QDir(torrent.absolutePath())==QDir(savePath))
         QFile::remove(torrent.absoluteFilePath());
     // rmdir only succeeds on an empty folder, so other episodes and the user's own
     // files stop the walk. Folders outside the download root were not created for it.
@@ -771,8 +791,35 @@ void TorrentEngine::cleanUpDeleted(const QString &torrentFile,const QString &sav
     while(folder.size()>root.size()&&QDir().rmdir(folder))folder=QFileInfo(folder).absolutePath();
 }
 
-void TorrentEngine::appendEntry(const Entry &entry)
+bool TorrentEngine::setSequential(const QString &infoHash, bool sequential)
 {
+    if (!m_session)
+        return false;
+    bool found = false;
+    for (auto &entry : m_entries)
+        if (entry.infoHash.compare(infoHash, Qt::CaseInsensitive) == 0) {
+            entry.sequential = sequential;
+            found = true;
+        }
+    if (!found)
+        return false;
+    for (const auto &handle : m_session->get_torrents())
+        if (hashString(handle).compare(infoHash, Qt::CaseInsensitive) == 0) {
+            if (sequential) handle.set_flags(lt::torrent_flags::sequential_download);
+            else handle.unset_flags(lt::torrent_flags::sequential_download);
+        }
+    saveState();
+    emit changed();
+    return true;
+}
+
+void TorrentEngine::appendEntry(const Entry &added)
+{
+    // Re-adding the same task (a magnet replaced by its .torrent) keeps the user's choice.
+    Entry entry = added;
+    for (const auto &existing : m_entries)
+        if (!entry.infoHash.isEmpty() && existing.infoHash == entry.infoHash && existing.sequential)
+            entry.sequential = true;
     m_entries.erase(std::remove_if(m_entries.begin(), m_entries.end(),
                                    [&](const Entry &existing) {
                                        return existing.infoHash == entry.infoHash
@@ -814,6 +861,7 @@ void TorrentEngine::saveState() const
         QJsonArray episodes;for(const auto &ep:entry.onlyEpisodes)episodes.append(ep);
         object.insert(QStringLiteral("only_episodes"),episodes);
         object.insert(QStringLiteral("auto_stopped"),entry.autoStopped);
+        object.insert(QStringLiteral("sequential"),entry.sequential);
         QJsonArray trackers;for(const auto &tracker:entry.trackers)trackers.append(tracker);object.insert("trackers",trackers);
         array.append(object);
     }
@@ -838,6 +886,7 @@ void TorrentEngine::loadState()
         entry.paused = object.value(QStringLiteral("paused")).toBool();
         for(const auto &ep:object.value(QStringLiteral("only_episodes")).toArray())entry.onlyEpisodes.append(ep.toString());
         entry.autoStopped=object.value(QStringLiteral("auto_stopped")).toBool();
+        entry.sequential=object.value(QStringLiteral("sequential")).toBool();
         for(const auto &tracker:object.value("trackers").toArray())entry.trackers.append(tracker.toString());
         if (!entry.uri.isEmpty())
             m_entries.push_back(entry);
@@ -881,12 +930,12 @@ void TorrentEngine::pollAlerts()
             } else if(refused&&listen->port!=0&&m_refusedPorts.size()<kMaxRefusedPorts) {
                 m_refusedPorts.insert(listen->port);
                 m_networkWarning.clear();
-                qInfo().noquote()<<QStringLiteral("监听端口 %1 无法使用（%2），改用其他端口").arg(listen->port).arg(QString::fromStdString(listen->error.message()));
+                qInfo().noquote()<<QCoreApplication::translate("Miku", "监听端口 %1 无法使用（%2），改用其他端口").arg(listen->port).arg(QString::fromStdString(listen->error.message()));
                 // Not from here: this runs in the middle of the alert list.
                 QMetaObject::invokeMethod(this,[this]{if(m_session)applySettings(m_settings);},Qt::QueuedConnection);
                 stateChanged=true;
             } else {
-                m_networkWarning=QStringLiteral("网络监听失败（%1 %2 端口 %3）：").arg(QString::fromUtf8(listen->listen_interface()),
+                m_networkWarning=QCoreApplication::translate("Miku", "网络监听失败（%1 %2 端口 %3）：").arg(QString::fromUtf8(listen->listen_interface()),
                     listen->socket_type==lt::socket_type_t::utp?QStringLiteral("UDP"):QStringLiteral("TCP")).arg(listen->port)+QString::fromStdString(listen->error.message());
                 qWarning().noquote()<<m_networkWarning;stateChanged=true;
             }
@@ -918,7 +967,7 @@ void TorrentEngine::pollAlerts()
             const auto entry=m_deleting.take(hashToQString(failed->info_hashes));
             if(!entry.infoHash.isEmpty()) {
                 cleanUpDeleted(entry.uri,entry.savePath);
-                emit engineError(QStringLiteral("部分文件没有删除，可能正被其他程序使用：%1").arg(QDir::toNativeSeparators(entry.savePath)));
+                emit engineError(QCoreApplication::translate("Miku", "部分文件没有删除，可能正被其他程序使用：%1").arg(QDir::toNativeSeparators(entry.savePath)));
             }
         } else if(const auto *moved=lt::alert_cast<lt::storage_moved_alert>(alert)) {
             const QString hash=hashString(moved->handle);

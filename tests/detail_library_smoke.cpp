@@ -193,12 +193,16 @@ int main(int argc, char **argv) {
     // A new batch must keep the rows on screen, not rebuild them.
     {
         int resets = 0, removed = 0;
-        QObject::connect(page.rows(), &QAbstractItemModel::modelReset, &app, [&] { ++resets; });
-        QObject::connect(page.rows(), &QAbstractItemModel::rowsRemoved, &app, [&] { ++removed; });
+        // Disconnected before the counters go out of scope: later changes to the rows
+        // would otherwise write into whatever the stack holds by then.
+        const auto resetWatch = QObject::connect(page.rows(), &QAbstractItemModel::modelReset, &app, [&] { ++resets; });
+        const auto removeWatch = QObject::connect(page.rows(), &QAbstractItemModel::rowsRemoved, &app, [&] { ++removed; });
         const auto before = page.rows()->count();
         aggregator.batchReady({resource(3)});
         pump();
         check(resets == 0 && removed == 0 && page.rows()->count() == before + 1, "a new batch inserts rows without rebuilding the list");
+        QObject::disconnect(resetWatch);
+        QObject::disconnect(removeWatch);
     }
 
     QVector<ResourceResult> manyGroups;

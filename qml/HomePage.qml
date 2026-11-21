@@ -52,7 +52,7 @@ Item {
                         anchors.verticalCenter: art.verticalCenter
                         width: Math.min(parent.width - x, 720)
                         spacing: 6
-                        Text { text: "今日焦点"; color: T.text2; font.pixelSize: T.callout; font.weight: Font.DemiBold }
+                        Text { text: qsTr("今日焦点"); color: T.text2; font.pixelSize: T.callout; font.weight: Font.DemiBold }
                         Text {
                             width: parent.width
                             text: page.featured.title || ""
@@ -76,7 +76,7 @@ Item {
                             elide: Text.ElideRight
                         }
                         Item { width: 1; height: 4 }
-                        NxButton { kind: "primary"; text: "查看资源"; onClicked: App.home.open(page.featured.subjectId) }
+                        NxButton { kind: "primary"; text: qsTr("查看资源"); onClicked: App.home.open(page.featured.subjectId) }
                     }
                 }
                 Item {
@@ -84,7 +84,7 @@ Item {
                     height: days.height
                     Segmented {
                         id: days
-                        Accessible.name: "每周放送日历"
+                        Accessible.name: qsTr("每周放送日历")
                         items: App.home.days.map(d => ({ text: d.text, value: d.day, tip: d.tip }))
                         value: App.home.day
                         onActivated: value => App.home.showDay(value)
@@ -95,10 +95,10 @@ Item {
     }
     Scaffold {
         anchors.fill: parent
-        title: "本季放送"
+        title: qsTr("本季放送")
         subtitle: App.home.status
         subtitleTip: App.home.statusTip
         scrolled: grid.scrolled
-        toolbar: IconButton { iconName: "refresh"; tip: "刷新放送表"; onClicked: App.home.load() }
+        toolbar: IconButton { iconName: "refresh"; tip: qsTr("刷新放送表"); onClicked: App.home.load() }
     }
 }

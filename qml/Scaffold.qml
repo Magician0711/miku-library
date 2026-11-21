@@ -27,7 +27,7 @@ Item {
     readonly property Item overlay: fixedLayer
 
     readonly property real leading: Shell.leading
-    readonly property real restingWidth: width - Shell.restingLeading - Shell.trailing
+    readonly property real restingWidth: width - Shell.leading - Shell.trailing
     readonly property real trailing: Shell.trailing
     readonly property real contentTop: band + fixedHeight
     // The window's own controls stay; tell them when content reaches them. A count, as

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "LocalLibrary.h"
+
+#include <QCoreApplication>
 #include "TitleParser.h"
 
 #include <QCryptographicHash>
@@ -56,7 +58,7 @@ bool LocalLibrary::load(QString *error)
     QJsonParseError parseError;
     const auto document=QJsonDocument::fromJson(file.readAll(),&parseError);
     if(parseError.error!=QJsonParseError::NoError||!document.isObject()
-        ||document.object().value("schema_version").toInt()!=1){if(error)*error=QStringLiteral("本地番剧目录格式无效，原文件已保留。");return false;}
+        ||document.object().value("schema_version").toInt()!=1){if(error)*error=QCoreApplication::translate("Miku", "本地番剧目录格式无效，原文件已保留。");return false;}
     m_preferences.clear();
     for(const auto &value:document.object().value("preferences").toArray()) {
         const auto o=value.toObject();
@@ -259,7 +261,7 @@ DownloadPreference LocalLibrary::preference(int id) const
 
 bool LocalLibrary::setPreference(int id,const DownloadPreference &preference,QString *error)
 {
-    if(!m_ready){if(error)*error=QStringLiteral("本地目录尚未成功读取。");return false;}
+    if(!m_ready){if(error)*error=QCoreApplication::translate("Miku", "本地目录尚未成功读取。");return false;}
     const auto before=m_preferences;
     m_preferences.insert(id,preference);
     if(!save(error)){m_preferences=before;return false;}
@@ -392,7 +394,7 @@ QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QV
         bool unknownExisting=false;
         for(const auto &i:m_items)if(i.subject.bangumiId==subject.bangumiId&&i.groupKey==group
             &&i.season==season&&i.episodes.isEmpty()&&(active(i.phase)||!playableFiles(i).isEmpty()))unknownExisting=true;
-        if(unknownExisting){if(reason)*reason=QStringLiteral("已有合集尚未确认集数，请等待元数据读取完成后更新。");continue;}
+        if(unknownExisting){if(reason)*reason=QCoreApplication::translate("Miku", "已有合集尚未确认集数，请等待元数据读取完成后更新。");continue;}
         QStringList episodes=episodeNumbers(release.episode),only;
         if(episodes.isEmpty()&&!release.isBatch)continue;
         if(episodes.isEmpty()) {
@@ -402,7 +404,7 @@ QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QV
                 bool unidentified=false;
                 for(const auto &i:m_items)if(i.subject.bangumiId==subject.bangumiId&&i.groupKey==group
                     &&i.season==season&&i.episodes.isEmpty()&&(active(i.phase)||!playableFiles(i).isEmpty()))unidentified=true;
-                if(unidentified){if(reason)*reason=QStringLiteral("已有合集的集数无法识别，已阻止重复下载。可播放现有视频或选择明确集数的资源。");continue;}
+                if(unidentified){if(reason)*reason=QCoreApplication::translate("Miku", "已有合集的集数无法识别，已阻止重复下载。可播放现有视频或选择明确集数的资源。");continue;}
                 const int last=subject.episodeCount>0?qMin(subject.episodeCount,1899):1899;
                 for(int ep=1;ep<=last;++ep)if(!covered.contains(QString::number(ep)))only.append(QString::number(ep));
                 if(only.isEmpty())continue;
@@ -450,7 +452,7 @@ QVector<PlannedDownload> LocalLibrary::plan(const AnimeSubject &subject,const QV
 
 bool LocalLibrary::put(const LibraryItem &item,QString *error)
 {
-    if(!m_ready){if(error)*error=QStringLiteral("本地目录尚未成功读取，已停止写入以保护原有记录。");return false;}
+    if(!m_ready){if(error)*error=QCoreApplication::translate("Miku", "本地目录尚未成功读取，已停止写入以保护原有记录。");return false;}
     const auto before=m_items;
     if(const auto found=m_byKey.constFind(item.key);found!=m_byKey.cend())m_items[found.value()]=item;
     else m_items.append(item);

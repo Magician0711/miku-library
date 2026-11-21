@@ -3,6 +3,8 @@
 
 #include "Format.h"
 
+#include <QCoreApplication>
+
 #include <QHash>
 #include <QVariantMap>
 
@@ -21,31 +23,31 @@ QPair<QString, QString> confidenceColors(Confidence confidence)
 QString confidenceTip(Confidence confidence)
 {
     switch (confidence) {
-    case Confidence::Probed: return QStringLiteral("已实测（MediaInfo/FFprobe）");
-    case Confidence::Metadata: return QStringLiteral("种子元数据确认");
-    case Confidence::Guessed: return QStringLiteral("文件名推测，未经实测");
+    case Confidence::Probed: return QCoreApplication::translate("Miku", "已实测（MediaInfo/FFprobe）");
+    case Confidence::Metadata: return QCoreApplication::translate("Miku", "种子元数据确认");
+    case Confidence::Guessed: return QCoreApplication::translate("Miku", "文件名推测，未经实测");
     case Confidence::Unknown: break;
     }
-    return QStringLiteral("未知");
+    return QCoreApplication::translate("Miku", "未知");
 }
 
 QString subtitleText(const ResourceTags &tags)
 {
     if (tags.subtitleLang.isEmpty() && tags.subtitleType.isEmpty())
         return {};
-    static const QHash<QString, QString> labels = {
-        {QStringLiteral("zh-Hans"), QStringLiteral("简")}, {QStringLiteral("zh-Hant"), QStringLiteral("繁")},
-        {QStringLiteral("zh"), QStringLiteral("中")}, {QStringLiteral("ja"), QStringLiteral("日")},
-        {QStringLiteral("en"), QStringLiteral("英")}, {QStringLiteral("multi"), QStringLiteral("多语")},
+    const QHash<QString, QString> labels = {
+        {QStringLiteral("zh-Hans"), QCoreApplication::translate("Miku", "简")}, {QStringLiteral("zh-Hant"), QCoreApplication::translate("Miku", "繁")},
+        {QStringLiteral("zh"), QCoreApplication::translate("Miku", "中")}, {QStringLiteral("ja"), QCoreApplication::translate("Miku", "日")},
+        {QStringLiteral("en"), QCoreApplication::translate("Miku", "英")}, {QStringLiteral("multi"), QCoreApplication::translate("Miku", "多语")},
     };
     QStringList langs;
     for (const auto &lang : tags.subtitleLang.split(QLatin1Char(','), Qt::SkipEmptyParts))
         langs << labels.value(lang, lang);
     QString text = langs.join(QStringLiteral("/"));
     if (!tags.subtitleType.isEmpty()) {
-        static const QHash<QString, QString> types = {
-            {QStringLiteral("internal"), QStringLiteral("内封")}, {QStringLiteral("hardcoded"), QStringLiteral("内嵌")},
-            {QStringLiteral("external"), QStringLiteral("外挂")}, {QStringLiteral("ass"), QStringLiteral("ASS")},
+        const QHash<QString, QString> types = {
+            {QStringLiteral("internal"), QCoreApplication::translate("Miku", "内封")}, {QStringLiteral("hardcoded"), QCoreApplication::translate("Miku", "内嵌")},
+            {QStringLiteral("external"), QCoreApplication::translate("Miku", "外挂")}, {QStringLiteral("ass"), QStringLiteral("ASS")},
             {QStringLiteral("srt"), QStringLiteral("SRT")}, {QStringLiteral("pgs"), QStringLiteral("PGS")},
         };
         text += types.value(tags.subtitleType, tags.subtitleType);
@@ -89,9 +91,9 @@ QString age(const QDateTime &time)
         return {};
     const qint64 days = time.date().daysTo(QDate::currentDate());
     if (days <= 0)
-        return QStringLiteral("今天");
+        return QCoreApplication::translate("Miku", "今天");
     if (days < 31)
-        return QStringLiteral("%1 天前").arg(days);
+        return QCoreApplication::translate("Miku", "%1 天前").arg(days);
     return time.date().toString(QStringLiteral("yyyy-MM-dd"));
 }
 
@@ -100,14 +102,14 @@ QString eta(qint64 seconds)
     if (seconds < 0)
         return QStringLiteral("—");
     if (seconds >= 86400)
-        return QStringLiteral("%1 天").arg(seconds / 86400);
+        return QCoreApplication::translate("Miku", "%1 天").arg(seconds / 86400);
     const qint64 hours = seconds / 3600;
     const qint64 minutes = (seconds % 3600) / 60;
     if (hours > 0)
-        return QStringLiteral("%1 时 %2 分").arg(hours).arg(minutes);
+        return QCoreApplication::translate("Miku", "%1 时 %2 分").arg(hours).arg(minutes);
     if (minutes > 0)
-        return QStringLiteral("%1 分 %2 秒").arg(minutes).arg(seconds % 60);
-    return QStringLiteral("%1 秒").arg(seconds);
+        return QCoreApplication::translate("Miku", "%1 分 %2 秒").arg(minutes).arg(seconds % 60);
+    return QCoreApplication::translate("Miku", "%1 秒").arg(seconds);
 }
 
 QString episodeSummary(const QStringList &episodes)
@@ -118,12 +120,12 @@ QString episodeSummary(const QStringList &episodes)
     for (int i = 1; i < episodes.size() && consecutive; ++i)
         consecutive = episodes.at(i).toDouble() == episodes.at(i - 1).toDouble() + 1;
     if (episodes.size() == 1)
-        return QStringLiteral("第 %1 话").arg(episodes.first());
+        return QCoreApplication::translate("Miku", "第 %1 话").arg(episodes.first());
     if (consecutive)
-        return QStringLiteral("第 %1–%2 话").arg(episodes.first(), episodes.last());
+        return QCoreApplication::translate("Miku", "第 %1–%2 话").arg(episodes.first(), episodes.last());
     if (episodes.size() <= 4)
-        return QStringLiteral("第 %1 话").arg(episodes.join(QStringLiteral("、")));
-    return QStringLiteral("第 %1 等 %2 话").arg(episodes.mid(0, 3).join(QStringLiteral("、"))).arg(episodes.size());
+        return QCoreApplication::translate("Miku", "第 %1 话").arg(episodes.join(QStringLiteral("、")));
+    return QCoreApplication::translate("Miku", "第 %1 等 %2 话").arg(episodes.mid(0, 3).join(QStringLiteral("、"))).arg(episodes.size());
 }
 
 QVariantList qualityChips(const ResourceTags &tags)
@@ -135,19 +137,19 @@ QVariantList qualityChips(const ResourceTags &tags)
         const auto colors = confidenceColors(confidence);
         chips << chip(text, colors.first, colors.second, QStringLiteral("%1：%2").arg(kind, confidenceTip(confidence)));
     };
-    add(tags.resolution, tags.resolutionConf, QStringLiteral("分辨率"));
+    add(tags.resolution, tags.resolutionConf, QCoreApplication::translate("Miku", "分辨率"));
     QString video = tags.videoCodec;
     if (tags.bitDepth > 0)
         video += QStringLiteral(" %1bit").arg(tags.bitDepth);
-    add(video, tags.videoConf, QStringLiteral("视频"));
+    add(video, tags.videoConf, QCoreApplication::translate("Miku", "视频"));
     if (!tags.hdrType.isEmpty())
         chips << chip(tags.hdrType, QStringLiteral("hdrBg"), QStringLiteral("hdrFg"), QStringLiteral("HDR：%1").arg(confidenceTip(tags.hdrConf)));
     QString audio = tags.audioCodec;
     if (!tags.audioChannels.isEmpty())
         audio += QStringLiteral(" %1").arg(tags.audioChannels);
-    add(audio, tags.audioConf, QStringLiteral("音频"));
-    add(subtitleText(tags), tags.subtitleConf, QStringLiteral("字幕"));
-    add(tags.sourceType, Confidence::Guessed, QStringLiteral("来源"));
+    add(audio, tags.audioConf, QCoreApplication::translate("Miku", "音频"));
+    add(subtitleText(tags), tags.subtitleConf, QCoreApplication::translate("Miku", "字幕"));
+    add(tags.sourceType, Confidence::Guessed, QCoreApplication::translate("Miku", "来源"));
     return chips;
 }
 }
@@ -155,27 +157,27 @@ QVariantList qualityChips(const ResourceTags &tags)
 namespace Notes {
 QString playerNote()
 {
-    return QStringLiteral("下载完成的视频在内置播放器中打开，能完整显示 ASS 特效字幕，并可开启 Anime4K 实时超分。"
-                          "离开播放页面也会继续播放，从侧栏的「正在播放」随时回来。");
+    return QCoreApplication::translate("Miku", "下载完成的视频在内置播放器中打开，能完整显示 ASS 特效字幕，并可开启 Anime4K 实时超分。"
+                          "离开播放页面也会继续播放，从底部导航栏的「正在播放」随时回来。");
 }
 
 QString freeSoftwareNote()
 {
-    return QStringLiteral("Miku Library 是免费的开源项目，从不以任何形式收费。如果你是付费购买、"
+    return QCoreApplication::translate("Miku", "Miku Library 是免费的开源项目，从不以任何形式收费。如果你是付费购买、"
                           "或通过付费下载渠道获得本软件的，请立即申请退款并向平台举报售卖者。");
 }
 
 QStringList disclaimerItems()
 {
     return {
-        QStringLiteral("本软件仅是番剧资源的检索与下载管理工具，不提供、不存储、不上传任何影视内容。检索结果全部来自第三方公开站点，其内容与本软件无关。"),
-        QStringLiteral("通过本软件下载的番剧仅供个人学习与交流使用，请在下载后 24 小时内删除。"),
-        QStringLiteral("请支持正版。喜欢的作品请通过正版平台观看或购买，以支持创作者。"),
-        QStringLiteral("请遵守所在地法律法规。不得将下载内容用于商业用途、公开放映、上传分享、二次分发或其他侵犯著作权的行为；由此产生的一切法律责任由使用者自行承担。"),
-        QStringLiteral("BitTorrent 下载时会同时向其他用户上传已下载的数据（做种），下载完成后默认继续上传。请了解所在地关于 P2P 传输的规定；可在「偏好设置 → 下载」限制上传，或开启下载完成后自动停止。"),
-        QStringLiteral("如权利人认为某些资源侵犯其合法权益，请联系提供该资源的站点处理。本软件不对第三方站点的内容、可用性及合法性负责。"),
-        QStringLiteral("本软件按「现状」提供，不对下载内容的完整性、安全性及因使用本软件造成的任何损失承担责任。"),
-        QStringLiteral("继续使用即表示您已阅读、理解并同意以上全部声明。"),
+        QCoreApplication::translate("Miku", "本软件仅是番剧资源的检索与下载管理工具，不提供、不存储、不上传任何影视内容。检索结果全部来自第三方公开站点，其内容与本软件无关。"),
+        QCoreApplication::translate("Miku", "通过本软件下载的番剧仅供个人学习与交流使用，请在下载后 24 小时内删除。"),
+        QCoreApplication::translate("Miku", "请支持正版。喜欢的作品请通过正版平台观看或购买，以支持创作者。"),
+        QCoreApplication::translate("Miku", "请遵守所在地法律法规。不得将下载内容用于商业用途、公开放映、上传分享、二次分发或其他侵犯著作权的行为；由此产生的一切法律责任由使用者自行承担。"),
+        QCoreApplication::translate("Miku", "BitTorrent 下载时会同时向其他用户上传已下载的数据（做种），下载完成后默认继续上传。请了解所在地关于 P2P 传输的规定；可在「偏好设置 → 下载」限制上传，或开启下载完成后自动停止。"),
+        QCoreApplication::translate("Miku", "如权利人认为某些资源侵犯其合法权益，请联系提供该资源的站点处理。本软件不对第三方站点的内容、可用性及合法性负责。"),
+        QCoreApplication::translate("Miku", "本软件按「现状」提供，不对下载内容的完整性、安全性及因使用本软件造成的任何损失承担责任。"),
+        QCoreApplication::translate("Miku", "继续使用即表示您已阅读、理解并同意以上全部声明。"),
     };
 }
 }

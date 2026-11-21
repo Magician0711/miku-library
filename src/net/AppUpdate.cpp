@@ -36,17 +36,17 @@ void AppUpdate::check()
         const auto release = HttpClient::json(reply, &ok).object();
         const auto latest = versionFromTag(release.value(QStringLiteral("tag_name")).toString());
         if (reply->error() != QNetworkReply::NoError || !ok || latest.isNull()) {
-            emit checked(QStringLiteral("暂时无法检查更新，请稍后再试。"));
+            emit checked(QCoreApplication::translate("Miku", "暂时无法检查更新，请稍后再试。"));
             return;
         }
         const auto current = QVersionNumber::fromString(QCoreApplication::applicationVersion());
         if (QVersionNumber::compare(latest, current) <= 0) {
-            emit checked(QStringLiteral("已是最新版本。"));
+            emit checked(QCoreApplication::translate("Miku", "已是最新版本。"));
             return;
         }
         QUrl page(release.value(QStringLiteral("html_url")).toString());
         if (!page.isValid() || page.scheme() != QStringLiteral("https")) page = QUrl(QString::fromLatin1(kReleasesPage));
-        emit checked(QStringLiteral("发现新版本 %1。").arg(latest.toString()));
+        emit checked(QCoreApplication::translate("Miku", "发现新版本 %1。").arg(latest.toString()));
         emit available(latest.toString(), page);
     });
 }

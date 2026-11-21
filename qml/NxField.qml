@@ -47,7 +47,7 @@ Tpl.TextField {
         side: 24
         iconName: "close"
         tint: T.text3
-        tip: "清除"
+        tip: qsTr("清除")
         visible: c.clearable && c.text !== ""
         focusPolicy: Qt.NoFocus
         onClicked: c.clear()

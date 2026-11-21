@@ -37,7 +37,7 @@ Tpl.Popup {
     }
     contentItem: Column {
         spacing: 2
-        Text { leftPadding: 10; topPadding: 6; bottomPadding: 4; text: "选择下载器"; color: T.text3; font.pixelSize: T.callout; font.weight: Font.DemiBold }
+        Text { leftPadding: 10; topPadding: 6; bottomPadding: 4; text: qsTr("选择下载器"); color: T.text3; font.pixelSize: T.callout; font.weight: Font.DemiBold }
         Repeater {
             model: popup.options
             Rectangle {
@@ -62,7 +62,7 @@ Tpl.Popup {
                     anchors.right: parent.right; anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.modelData.current && !row.modelData.configured
-                    text: "未配置"
+                    text: qsTr("未配置")
                     color: T.text3
                     font.pixelSize: T.callout
                 }
@@ -78,7 +78,7 @@ Tpl.Popup {
             height: 34
             radius: 9
             color: configureHover.hovered ? T.fill : "transparent"
-            Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: "配置下载器…"; color: T.text; font.pixelSize: T.body }
+            Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: qsTr("配置下载器…"); color: T.text; font.pixelSize: T.body }
             HoverHandler { id: configureHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { popup.close(); App.chooseDownloader("configure") } }
         }

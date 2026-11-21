@@ -22,15 +22,31 @@ QtObject {
     readonly property color border: strong ? borderStrong : dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0.24, 0.24, 0.26, 0.16)
     readonly property color borderStrong: dark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(0.24, 0.24, 0.26, 0.34)
 
-    // The floating layer: sidebar glass, and its solid fallback.
-    readonly property color glass: dark ? Qt.rgba(0.16, 0.16, 0.18, 0.62) : Qt.rgba(0.97, 0.97, 0.98, 0.66)
+    // The window's own background where the desktop shows through it (WindowChrome
+    // .translucent): bg as a tint over the system's blur. Text keeps its contrast because
+    // the system material under it is already a light or dark wash of its own.
+    // Measured over a dark desktop: light comes out near #ececed, which keeps text3 at 4.5:1.
+    readonly property color bgTint: strong ? bg : dark ? Qt.rgba(0.086, 0.086, 0.094, 0.62) : Qt.rgba(0.961, 0.961, 0.969, 0.46)
+    readonly property bool seeThrough: Chrome.translucent && !strong
+    // Groups and fields in the content layer. Over the desktop they are a lighter veil on
+    // the same blur instead of a white sheet; over an opaque window, surface itself.
+    readonly property color contentSurface: !seeThrough ? surface : dark ? Qt.rgba(1, 1, 1, 0.055) : Qt.rgba(1, 1, 1, 0.42)
+
+    // The floating layer, Liquid Glass: navigation bar and window controls, and its solid
+    // fallback. No colour of its own: a thin wash over the blurred content beneath.
+    readonly property color glass: dark ? Qt.rgba(0.14, 0.14, 0.16, 0.5) : Qt.rgba(0.99, 0.99, 1, 0.48)
     readonly property color glassSolid: dark ? "#232326" : "#ececef"
     readonly property color glassEdge: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.75)
+    // Light caught along the top rim, and the faint shade the glass gathers at its foot.
+    readonly property color glassHighlight: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.9)
+    readonly property color glassShade: dark ? Qt.rgba(0, 0, 0, 0.28) : Qt.rgba(0.1, 0.12, 0.16, 0.07)
 
     // Text
     readonly property color text: dark ? "#f5f5f7" : "#1d1d1f"
-    readonly property color text2: strong ? text : dark ? "#c7c7cc" : "#56565c"
-    readonly property color text3: strong ? text : dark ? "#a0a0a7" : "#6a6a70"
+    // Over the desktop a dark window behind can dim the light page to about #c0c0c1, so
+    // the light secondary text darkens to keep 4.5:1 there.
+    readonly property color text2: strong ? text : dark ? "#c7c7cc" : seeThrough ? "#404045" : "#56565c"
+    readonly property color text3: strong ? text : dark ? "#a0a0a7" : seeThrough ? "#4a4a50" : "#6a6a70"
     readonly property color disabledText: dark ? "#6c6c73" : "#a9a9b0"
 
     // Brand colour: primary actions, selection and status only.
@@ -75,7 +91,7 @@ QtObject {
     readonly property int fast: Theme.animated ? 140 : 0     // hover, popups
     readonly property int normal: Theme.animated ? 220 : 0   // selection, expand / collapse, page changes, theme change
     readonly property int slow: Theme.animated ? 320 : 0     // notices leaving by themselves
-    readonly property int glide: Theme.animated ? 380 : 0    // large surfaces moving, such as the sidebar
+    readonly property int glide: Theme.animated ? 380 : 0    // large surfaces moving, such as the navigation selection
     readonly property var glideCurve: [0.32, 0.72, 0, 1, 1, 1]   // leaves at once, settles slowly
 
     function tone(name) {

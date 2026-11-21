@@ -3,6 +3,8 @@
 
 #include "StartupFlow.h"
 
+#include <QCoreApplication>
+
 #include "Format.h"
 #include "NativeDialogs.h"
 
@@ -56,7 +58,7 @@ void StartupFlow::chooseDirectory()
         if (!QFileInfo(from).isDir())
             from = QDir::homePath();
     }
-    const QString chosen = NativeDialogs::chooseDirectory(m_window, QStringLiteral("选择下载目录"), from);
+    const QString chosen = NativeDialogs::chooseDirectory(m_window, QCoreApplication::translate("Miku", "选择下载目录"), from);
     if (chosen.isEmpty())
         return;
     m_downloadDir = chosen;

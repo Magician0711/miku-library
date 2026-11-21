@@ -32,13 +32,16 @@ struct AppConfig {
     QString proxyHost;
     int proxyPort = 0;
     int updateIntervalHours = 0;                   // repeat the update check while running; 0 = startup only
-    QString language = QStringLiteral("zh-CN");
+    QString language = QStringLiteral("system");   // interface: system | zh-CN | zh-TW | en | ja
     bool hasSavedDownloadDirectory = false;
 
     static QString configPath();
     // "library" inside the system Downloads folder; created on first use.
     static QString defaultDownloadDirectory();
     static QString dataDir();
+    // A file or folder that ships with the program: beside it on Windows, in the bundle's
+    // Resources on macOS, under share/miku-library on an installed Linux build.
+    static QString resourcePath(const QString &relative);
     static AppConfig load();
     bool save() const;
     DownloadDirectoryState prepareDownloadDirectory(QString *error = nullptr,

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
+#include <QCoreApplication>
 #include <QJsonObject>
 #include <QMap>
 #include <QFileInfo>
@@ -27,12 +28,12 @@ struct DownloaderSettings {
     QString customArguments=QStringLiteral("\"{input}\"");
     static QStringList types(){return {"builtin","qbittorrent","transmission","aria2","bitcomet","custom"};}
     static QString name(const QString &type) {
-        if(type=="builtin")return QStringLiteral("内置下载器");
+        if(type=="builtin")return QCoreApplication::translate("Miku", "内置下载器");
         if(type=="qbittorrent")return "qBittorrent";
         if(type=="transmission")return "Transmission";
         if(type=="aria2")return "aria2";
         if(type=="bitcomet")return "BitComet";
-        return QStringLiteral("自定义下载器");
+        return QCoreApplication::translate("Miku", "自定义下载器");
     }
     QJsonObject toJson() const {
         QJsonObject paths;for(auto it=programs.begin();it!=programs.end();++it)paths.insert(it.key(),it.value());
@@ -48,6 +49,22 @@ struct DownloaderSettings {
         s.customArguments=o.value("custom_arguments").toString(s.customArguments);return s;
     }
     static QString detect(const QString &type) {
+#ifndef Q_OS_WIN
+        // On the PATH, then (macOS) the usual application bundles and Homebrew.
+        const QMap<QString,QStringList> names={{"qbittorrent",{"qbittorrent","qbittorrent-nox"}},
+            {"transmission",{"transmission-qt","transmission-gtk"}},{"aria2",{"aria2c"}}};
+        for(const auto &exe:names.value(type)) {
+            const QString found=QStandardPaths::findExecutable(exe,{QStringLiteral("/opt/homebrew/bin"),QStringLiteral("/usr/local/bin")});
+            if(!found.isEmpty())return found;
+            const QString onPath=QStandardPaths::findExecutable(exe);if(!onPath.isEmpty())return onPath;
+        }
+#ifdef Q_OS_MACOS
+        const QMap<QString,QString> bundles={{"qbittorrent","/Applications/qbittorrent.app/Contents/MacOS/qbittorrent"},
+            {"transmission","/Applications/Transmission.app/Contents/MacOS/Transmission"}};
+        if(QFileInfo(bundles.value(type)).isFile())return bundles.value(type);
+#endif
+        return {};
+#else
         const QMap<QString,QStringList> names={{"qbittorrent",{"qbittorrent.exe"}},
             {"transmission",{"transmission-qt.exe"}},{"aria2",{"aria2c.exe"}},{"bitcomet",{"BitComet.exe","BitComet_x64.exe"}}};
         for(const auto &exe:names.value(type)) {
@@ -62,5 +79,6 @@ struct DownloaderSettings {
                 }
         }
         return {};
+#endif
     }
 };

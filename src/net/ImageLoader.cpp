@@ -6,8 +6,10 @@
 #include "HttpClient.h"
 
 #include <QCryptographicHash>
+#include <QBuffer>
 #include <QDir>
 #include <QFile>
+#include <QImageReader>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -117,18 +119,31 @@ void ImageLoader::download(const QString &url)
     connect(reply, &QNetworkReply::finished, this, [this, reply, url] {
         reply->deleteLater();
         const QByteArray data = reply->readAll();
-        if (reply->error() != QNetworkReply::NoError || data.isEmpty() || data.size() > 4 * 1024 * 1024)
+        // Some original covers are several megabytes; a limit just over 4 MB once left those grey.
+        if (reply->error() != QNetworkReply::NoError || data.isEmpty() || data.size() > 24 * 1024 * 1024)
             return finish(url, {});
         const QString path = cachePath(url);
         m_pool.start([this, url, path, data] {
-            QImage image;
-            if (image.loadFromData(data)) {
-                image = thumbnail(image);
+            const QImage image = decodeCover(data);
+            if (!image.isNull())
                 store(image, path);
-            }
             QMetaObject::invokeMethod(this, [this, url, image] { finish(url, image); }, Qt::QueuedConnection);
         });
     });
+}
+
+QImage ImageLoader::decodeCover(const QByteArray &data)
+{
+    QBuffer buffer;
+    buffer.setData(data);
+    buffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&buffer);
+    // A cover thousands of pixels tall is decoded near the size it is shown at, not in full.
+    const QSize full = reader.size();
+    if (full.isValid() && (full.width() > 2 * kWidth || full.height() > 2 * kHeight))
+        reader.setScaledSize(full.scaled(2 * kWidth, 2 * kHeight, Qt::KeepAspectRatioByExpanding));
+    const QImage image = reader.read();
+    return image.isNull() ? image : thumbnail(image);
 }
 
 void ImageLoader::finish(const QString &url, const QImage &image)

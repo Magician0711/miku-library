@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AnimeDownloads.h"
+
+#include <QCoreApplication>
 #include "TorrentEngine.h"
 #include "ExternalDownloader.h"
 #include "DownloaderRpc.h"
@@ -78,9 +80,9 @@ QString moveRecordFiles(const LibraryItem &item,const QString &from,const QStrin
     for(const auto &source:sources) {
         const QString target=rebase(source,from,to);
         QString problem;
-        if(QFileInfo::exists(target))problem=QStringLiteral("目标位置已有同名文件");
-        else if(!QDir().mkpath(QFileInfo(target).absolutePath()))problem=QStringLiteral("无法创建目录");
-        else if(!QFile::rename(source,target))problem=QStringLiteral("文件可能正被其他程序使用");
+        if(QFileInfo::exists(target))problem=QCoreApplication::translate("Miku", "目标位置已有同名文件");
+        else if(!QDir().mkpath(QFileInfo(target).absolutePath()))problem=QCoreApplication::translate("Miku", "无法创建目录");
+        else if(!QFile::rename(source,target))problem=QCoreApplication::translate("Miku", "文件可能正被其他程序使用");
         if(!problem.isEmpty()) {
             for(const auto &[back,moved]:done)QFile::rename(moved,back);
             return QStringLiteral("%1：%2").arg(QFileInfo(source).fileName(),problem);
@@ -149,7 +151,7 @@ void AnimeDownloads::recoverStalled(const QVector<DownloadTask> &tasks)
             m_activeKeys.insert(item.key);m_engine->remove(item.hash,false);
             auto pending=item;pending.phase="queued";QString error;
             if(!m_library->put(pending,&error)){m_activeKeys.remove(item.key);emit this->error(error);break;}
-            emit information(QStringLiteral("%1 暂无可用连接，正在尝试其他来源。").arg(item.resource.title));
+            emit information(QCoreApplication::translate("Miku", "%1 暂无可用连接，正在尝试其他来源。").arg(item.resource.title));
             waitForRemoval(item.key,item.hash,alternatives);break;
         }
     }
@@ -163,7 +165,7 @@ void AnimeDownloads::waitForRemoval(const QString &key,const QString &hash,QVect
         if(!item||item->phase!="queued"){m_activeKeys.remove(key);return;}
         bool present=false;for(const auto &task:m_engine->listTorrents())if(task.infoHash==hash)present=true;
         if(present&&attempt<50){waitForRemoval(key,hash,candidates,attempt+1);return;}
-        if(present){item->phase="error";m_library->put(*item);m_activeKeys.remove(key);emit error(QStringLiteral("原任务尚未停止，已取消切换以避免重复下载。"));return;}
+        if(present){item->phase="error";m_library->put(*item);m_activeKeys.remove(key);emit error(QCoreApplication::translate("Miku", "原任务尚未停止，已取消切换以避免重复下载。"));return;}
         m_waiting.remove(key);startCandidate(key,candidates);
     });
 }
@@ -239,17 +241,17 @@ bool AnimeDownloads::reserve(const AnimeSubject &subject,const PlannedDownload &
     item.onlyEpisodes=plan.onlyEpisodes;
     item.savePath=m_library->downloadDirectory(m_config->engine.savePath,subject,r.releaseGroup,plan.season);
     QString message;
-    if(!QDir().mkpath(item.savePath)){emit error(QStringLiteral("无法创建番剧目录：%1").arg(item.savePath));return false;}
-    if(!m_library->put(item,&message)){emit error(QStringLiteral("无法记录下载任务：%1").arg(message));return false;}
+    if(!QDir().mkpath(item.savePath)){emit error(QCoreApplication::translate("Miku", "无法创建番剧目录：%1").arg(item.savePath));return false;}
+    if(!m_library->put(item,&message)){emit error(QCoreApplication::translate("Miku", "无法记录下载任务：%1").arg(message));return false;}
     m_pending.enqueue(key);return true;
 }
 
 void AnimeDownloads::downloadOne(const AnimeSubject &subject,const ResourceResult &resource)
 {
-    if(m_config->downloader.selected=="builtin"&&!m_engine->running()){emit error(QStringLiteral("下载引擎未启动。"));return;}
+    if(m_config->downloader.selected=="builtin"&&!m_engine->running()){emit error(QCoreApplication::translate("Miku", "下载引擎未启动。"));return;}
     QString setupError;if(!ExternalDownloader::validate(m_config->downloader,&setupError)){emit error(setupError);return;}
     adoptExisting(subject,{resource});
-    if(m_library->downloaded(subject.bangumiId,resource)){emit information(QStringLiteral("该资源已经下载，可直接播放。"));return;}
+    if(m_library->downloaded(subject.bangumiId,resource)){emit information(QCoreApplication::translate("Miku", "该资源已经下载，可直接播放。"));return;}
     if(m_library->busy(subject.bangumiId,resource)) {
         const auto item=m_library->item(m_library->itemKey(subject.bangumiId,resource));
         if(item&&item->downloader=="builtin"&&!item->hash.isEmpty())m_engine->resume(item->hash);
@@ -259,18 +261,18 @@ void AnimeDownloads::downloadOne(const AnimeSubject &subject,const ResourceResul
     PlannedDownload plan{resource,release.season.value_or(LocalLibrary::subjectSeason(subject)),episodeNumbers(release.episode),{}};
     if(release.isBatch&&plan.episodes.isEmpty()&&m_library->groupHasHistory(subject.bangumiId,resource.releaseGroup)) {
         QString reason;const auto plans=m_library->plan(subject,{resource},&reason);
-        if(plans.isEmpty()){emit information(reason.isEmpty()?QStringLiteral("当前没有可确认的缺集，已跳过重复合集。"):reason);return;}
+        if(plans.isEmpty()){emit information(reason.isEmpty()?QCoreApplication::translate("Miku", "当前没有可确认的缺集，已跳过重复合集。"):reason);return;}
         plan=plans.first();
     }
     for(const auto &i:m_library->items())if(i.subject.bangumiId==subject.bangumiId
         &&i.groupKey==releaseGroupKey(resource.releaseGroup)&&i.season==plan.season&&i.episodes.isEmpty()
         &&(i.phase=="queued"||i.phase=="downloading"||i.phase=="paused"||!m_library->playableFiles(i).isEmpty())) {
-        emit information(QStringLiteral("已有合集的集数尚未确认，请等待元数据读取后更新，以免重复下载。"));return;
+        emit information(QCoreApplication::translate("Miku", "已有合集的集数尚未确认，请等待元数据读取后更新，以免重复下载。"));return;
     }
     const auto covered=m_library->claimedEpisodes(subject.bangumiId,resource.releaseGroup,plan.season);
     QStringList missing;for(const auto &ep:plan.episodes)if(!covered.contains(ep))missing.append(ep);
     if(!plan.episodes.isEmpty()&&missing.isEmpty()) {
-        emit information(QStringLiteral("同一字幕组的这些话数已下载或正在下载，已跳过重复任务。"));return;
+        emit information(QCoreApplication::translate("Miku", "同一字幕组的这些话数已下载或正在下载，已跳过重复任务。"));return;
     }
     if(missing.size()!=plan.episodes.size()){plan.onlyEpisodes=missing;plan.episodes=missing;}
     if(!hasRoomFor({plan}))return;
@@ -279,13 +281,13 @@ void AnimeDownloads::downloadOne(const AnimeSubject &subject,const ResourceResul
 
 void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<ResourceResult> &resources,const EpisodeRange &range)
 {
-    if(m_config->downloader.selected=="builtin"&&!m_engine->running()){emit error(QStringLiteral("下载引擎未启动。"));return;}
+    if(m_config->downloader.selected=="builtin"&&!m_engine->running()){emit error(QCoreApplication::translate("Miku", "下载引擎未启动。"));return;}
     QString setupError;if(!ExternalDownloader::validate(m_config->downloader,&setupError)){emit error(setupError);return;}
-    if(resources.isEmpty()){emit information(QStringLiteral("暂时没有可更新的资源，请等待检索完成后重试。"));return;}
+    if(resources.isEmpty()){emit information(QCoreApplication::translate("Miku", "暂时没有可更新的资源，请等待检索完成后重试。"));return;}
     const QString group=releaseGroupKey(resources.first().releaseGroup);
     if(group.isEmpty()||resources.first().releaseGroup==kUnknownGroup){emit error(QStringLiteral("无法确认字幕组，不能自动批量下载。"));return;}
     for(const auto &r:resources)if(releaseGroupKey(r.releaseGroup)!=group) {
-        emit error(QStringLiteral("资源来自不同字幕组，已取消批量任务。"));return;
+        emit error(QCoreApplication::translate("Miku", "资源来自不同字幕组，已取消批量任务。"));return;
     }
     adoptExisting(subject,resources);
     for(const auto &i:m_library->items())if(i.subject.bangumiId==subject.bangumiId&&i.groupKey==group&&i.downloader=="builtin"&&i.phase=="paused")
@@ -295,8 +297,8 @@ void AnimeDownloads::downloadGroup(const AnimeSubject &subject,const QVector<Res
     int added=0;for(const auto &plan:plans)if(reserve(subject,plan))++added;
     if(added){emit queued();processNext();}
     else if(!reason.isEmpty())emit information(reason);
-    else if(range.active())emit information(QStringLiteral("所选集数范围内没有需要下载的集数：已下载、已加入任务，或当前检索结果中没有对应资源。"));
-    else emit information(QStringLiteral("该字幕组当前可识别的集数已下载或已加入任务，无需重复下载。"));
+    else if(range.active())emit information(QCoreApplication::translate("Miku", "所选集数范围内没有需要下载的集数：已下载、已加入任务，或当前检索结果中没有对应资源。"));
+    else emit information(QCoreApplication::translate("Miku", "该字幕组当前可识别的集数已下载或已加入任务，无需重复下载。"));
 }
 
 void AnimeDownloads::scheduleSynchronize()
@@ -326,7 +328,7 @@ void AnimeDownloads::startCandidate(const QString &key,const QVector<ResourceRes
     if(!found){m_activeKeys.remove(key);return;}
     if(index>=candidates.size()) {
         found->phase="error";QString message;m_library->put(*found,&message);
-        m_errors.append(found->resource.title+QStringLiteral(": 没有可用的下载来源。"));
+        m_errors.append(found->resource.title+QCoreApplication::translate("Miku", ": 没有可用的下载来源。"));
         m_activeKeys.remove(key);QTimer::singleShot(0,this,&AnimeDownloads::processNext);return;
     }
     auto pending=*found;pending.resource=candidates.at(index);
@@ -410,7 +412,7 @@ bool AnimeDownloads::hasRoomFor(const QVector<PlannedDownload> &plans)
     constexpr qint64 margin=512LL*1024*1024;   // room for partial files and the system
     if(drive.bytesAvailable()>=needed+margin)return true;
     const QLocale locale;
-    emit error(QStringLiteral("下载目录所在磁盘空间不足：这些资源约需 %1，剩余 %2。请清理磁盘，或在「偏好设置 → 下载」更换下载目录。")
+    emit error(QCoreApplication::translate("Miku", "下载目录所在磁盘空间不足：这些资源约需 %1，剩余 %2。请清理磁盘，或在「偏好设置 → 下载」更换下载目录。")
         .arg(locale.formattedDataSize(needed),locale.formattedDataSize(drive.bytesAvailable())));
     return false;
 }

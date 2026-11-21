@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "BangumiClient.h"
+
+#include <QCoreApplication>
 #include <QSaveFile>
 #include <QFile>
 #include <QDir>
@@ -185,7 +187,7 @@ void BangumiClient::search(const QString &term, int limit,
         const auto doc = HttpClient::json(reply, &ok);
         reply->deleteLater();
         if (!ok || !doc.isObject()) {
-            callback({}, QStringLiteral("Bangumi 返回了无效 JSON"));
+            callback({}, QCoreApplication::translate("Miku", "Bangumi 返回了无效 JSON"));
             return;
         }
         QVector<AnimeSubject> subjects;
@@ -217,7 +219,7 @@ void BangumiClient::getSubject(int id, std::function<void(AnimeSubject, QString)
                 subject = parseSubjectV0(doc.object());
                 m_subjects.insert(id, subject);
             } else {
-                error = QStringLiteral("Bangumi 返回了无效 JSON");
+                error = QCoreApplication::translate("Miku", "Bangumi 返回了无效 JSON");
             }
         }
         // Errors are not cached, so a later attempt can still succeed.
@@ -251,7 +253,7 @@ void BangumiClient::calendar(std::function<void(CalendarDays, QString, QDateTime
         const auto doc = error.isEmpty() ? HttpClient::json(reply, &ok) : QJsonDocument();
         reply->deleteLater();
         if (error.isEmpty() && (!ok || !doc.isArray()))
-            error = QStringLiteral("Bangumi 放送表返回了无效 JSON");
+            error = QCoreApplication::translate("Miku", "Bangumi 放送表返回了无效 JSON");
         if (error.isEmpty()) {
             if (!cachePath.isEmpty()) {
                 QSaveFile file(cachePath);

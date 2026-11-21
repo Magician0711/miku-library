@@ -16,10 +16,10 @@ class StartupFlow final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString mode READ mode CONSTANT)   // "guide" or "directory"
     Q_PROPERTY(QString downloadDir READ downloadDir NOTIFY downloadDirChanged)
-    Q_PROPERTY(QString reason READ reason CONSTANT)
-    Q_PROPERTY(QStringList disclaimer READ disclaimer CONSTANT)
-    Q_PROPERTY(QString playerNote READ playerNote CONSTANT)
-    Q_PROPERTY(QString freeNote READ freeNote CONSTANT)
+    Q_PROPERTY(QString reason READ reason NOTIFY textsChanged)
+    Q_PROPERTY(QStringList disclaimer READ disclaimer NOTIFY textsChanged)
+    Q_PROPERTY(QString playerNote READ playerNote NOTIFY textsChanged)
+    Q_PROPERTY(QString freeNote READ freeNote NOTIFY textsChanged)
 public:
     StartupFlow(const QString &mode, const QString &downloadDir, const QString &reason = {}, QObject *parent = nullptr);
 
@@ -37,6 +37,8 @@ public:
     Q_INVOKABLE void finish(bool accepted);
 
 signals:
+    // The guide's language picker changed the language.
+    void textsChanged();
     void downloadDirChanged();
     void finished();
     void directoryRejected();

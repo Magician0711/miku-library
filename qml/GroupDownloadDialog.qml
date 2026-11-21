@@ -11,7 +11,7 @@ NxDialog {
     readonly property var options: App.detail.groupDialog
     readonly property bool wanted: options.group !== undefined
     property var shown: ({})
-    title: "选择下载方式"
+    title: qsTr("选择下载方式")
     dialogWidth: 500
 
     onWantedChanged: {
@@ -58,7 +58,7 @@ NxDialog {
     Row {
         width: parent.width
         spacing: 10
-        Caption { text: "字幕" }
+        Caption { text: qsTr("字幕") }
         NxSelect {
             id: language
             objectName: "groupLanguage"
@@ -79,7 +79,7 @@ NxDialog {
     Row {
         width: parent.width
         spacing: 10
-        Caption { text: "清晰度" }
+        Caption { text: qsTr("清晰度") }
         NxSelect {
             id: resolution
             objectName: "groupResolution"
@@ -92,13 +92,13 @@ NxDialog {
     Row {
         width: parent.width
         spacing: 10
-        Caption { text: "集数" }
+        Caption { text: qsTr("集数") }
         NxSpin {
             id: first
             objectName: "groupFirst"
             width: (parent.width - 62 - 28) / 2
             from: 1; to: 1899
-            prefix: "第 "; suffix: " 话"
+            prefix: qsTr("第 "); suffix: qsTr(" 话")
             enabled: dialog.shown.hasEpisodes === true
             onEdited: value => { if (last.value < value) last.value = value; dialog.refresh() }
         }
@@ -107,7 +107,7 @@ NxDialog {
             height: 32
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignHCenter
-            text: "至"
+            text: qsTr("至")
             color: T.text3
             font.pixelSize: T.callout
         }
@@ -116,7 +116,7 @@ NxDialog {
             objectName: "groupLast"
             width: (parent.width - 62 - 28) / 2
             from: 1; to: 1899
-            prefix: "第 "; suffix: " 话"
+            prefix: qsTr("第 "); suffix: qsTr(" 话")
             enabled: dialog.shown.hasEpisodes === true
             onEdited: value => { if (first.value > value) first.value = value; dialog.refresh() }
         }
@@ -138,7 +138,7 @@ NxDialog {
     Text {
         width: parent.width
         visible: dialog.shown.hasEpisodes === false
-        text: "这些资源都是集数未知的合集，将按合集内容下载。"
+        text: qsTr("这些资源都是集数未知的合集，将按合集内容下载。")
         color: T.text3
         font.pixelSize: T.callout
         wrapMode: Text.Wrap
@@ -159,11 +159,11 @@ NxDialog {
         Row {
             anchors.right: parent.right
             spacing: 8
-            NxButton { text: "取消"; onClicked: App.detail.dismissGroup() }
+            NxButton { text: qsTr("取消"); onClicked: App.detail.dismissGroup() }
             NxButton {
                 objectName: "groupStart"
                 kind: "primary"
-                text: "开始下载"
+                text: qsTr("开始下载")
                 enabled: dialog.ready
                 onClicked: App.detail.confirmGroup(dialog.choice(language), dialog.choice(type), dialog.choice(resolution), first.value, last.value)
             }

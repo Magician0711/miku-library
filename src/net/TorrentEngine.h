@@ -49,7 +49,11 @@ public:
     static QString saveTorrentFile(const QByteArray &data,const QString &path,QString *error=nullptr);
     bool selectEpisodes(const QString &infoHash,const QStringList &episodes,QString *error=nullptr);
     bool pause(const QString &infoHash);
+    // Also clears a task's error, so it doubles as retry.
     bool resume(const QString &infoHash);
+    // Pieces in file order: in a batch the early episodes finish first and can be watched
+    // while the rest arrives. Kept across restarts.
+    bool setSequential(const QString &infoHash, bool sequential);
     bool remove(const QString &infoHash, bool deleteFiles = false);
     // Moves a task's data, partial files included, to newPath; the saved .torrent
     // beside it moves too. The outcome arrives as storageMoved.
@@ -71,6 +75,7 @@ private:
         QStringList onlyEpisodes;
         bool autoStopped = false;
         QStringList trackers;
+        bool sequential = false;
     };
 
     bool addMagnet(const QString &magnet, const QString &savePath, bool paused, QString *error,

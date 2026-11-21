@@ -10,6 +10,7 @@
 #include <QLibrary>
 #include <QMutex>
 #include <QObject>
+#include <QSize>
 #include <QVariant>
 #include <QVariantList>
 
@@ -38,6 +39,10 @@ class PlayerController final : public QObject {
     Q_PROPERTY(int subtitleTrack READ subtitleTrack NOTIFY tracksChanged)
     // 0 off, 1 fast, 2 high quality: the Anime4K presets.
     Q_PROPERTY(int upscale READ upscale NOTIFY upscaleChanged)
+    // Frame interpolation: 0 off, 1 smooth (mpv blends frames in step with the display),
+    // 2 motion (VapourSynth + MVTools synthesise in-between frames). 2 needs VapourSynth.
+    Q_PROPERTY(int interpolation READ interpolation NOTIFY interpolationChanged)
+    Q_PROPERTY(bool motionAvailable READ motionAvailable CONSTANT)
     // Decoding pictures nobody can see would be wasted; audio goes on without them.
     Q_PROPERTY(bool videoVisible READ videoVisible WRITE setVideoVisible NOTIFY videoVisibleChanged)
 public:
@@ -58,6 +63,10 @@ public:
     int audioTrack() const { return m_audioTrack; }
     int subtitleTrack() const { return m_subtitleTrack; }
     int upscale() const { return m_upscale; }
+    int interpolation() const { return m_interpolation; }
+    bool motionAvailable() const { return m_motionAvailable; }
+    // The refresh rate of the screen the picture is on; interpolation aims at it.
+    void setDisplayFps(qreal fps);
     bool videoVisible() const { return m_videoVisible; }
     void setVideoVisible(bool visible);
 
@@ -71,15 +80,24 @@ public:
     Q_INVOKABLE void setAudioTrack(int id);
     Q_INVOKABLE void setSubtitleTrack(int id);
     Q_INVOKABLE void setUpscale(int mode);
+    Q_INVOKABLE void setInterpolation(int mode);
     Q_INVOKABLE void stop();
     // What mpv currently applies to the picture; tests read it.
     QString shaderList() const;
+    // What mpv currently does to motion, for tests: "video-sync interpolation vf display-sync-active".
+    QString interpolationState() const;
+    // The rate frames leave the video filters at, as mpv estimates it; 0 before it knows.
+    double filteredFps() const;
 
-    // Render thread, while the scene graph is between frames.
+    // Render thread, while the scene graph is between frames. On Windows device is the
+    // scene graph's ID3D11Device; elsewhere the scene graph's OpenGL context is current.
     bool createRenderContext(void *device);
     bool renderContextReady() const { return m_renderReady.load(); }
-    // True when a frame was drawn into the texture.
-    bool renderFrame(void *texture, bool force);
+    // True when a frame was drawn. target is the ID3D11Texture2D on Windows and the
+    // OpenGL framebuffer object elsewhere; size is only needed for OpenGL.
+    bool renderFrame(quintptr target, const QSize &size, bool force);
+    // Render thread, after the frame reached the screen: mpv times display-synced video by it.
+    void reportSwap();
 
     // Hides the window first, so that nothing else uses the graphics device meanwhile.
     void shutdown(QQuickWindow *window);
@@ -92,6 +110,7 @@ signals:
     void volumeChanged();
     void tracksChanged();
     void upscaleChanged();
+    void interpolationChanged();
     void videoVisibleChanged();
     void frameReady();
     void failed(const QString &message);
@@ -103,6 +122,9 @@ private:
     void command(const QStringList &arguments);
     void setOption(const char *name, const QString &value);
     void applyUpscale();
+    void applyInterpolation();
+    void applyDisplayFps();
+    QString property(const char *name) const;
     void parseTracks(const QString &json);
     void loadState();
     void saveState();
@@ -121,7 +143,9 @@ private:
     bool m_loading = false;
     QString m_path, m_pendingPath, m_title, m_subtitle;
     qreal m_position = 0, m_duration = 0, m_resumeAt = 0;
-    int m_volume = 100, m_upscale = 0, m_audioTrack = 0, m_subtitleTrack = 0;
+    int m_volume = 100, m_upscale = 0, m_interpolation = 0, m_audioTrack = 0, m_subtitleTrack = 0;
+    bool m_motionAvailable = false;
+    qreal m_displayFps = 0;
     QVariantList m_audioTracks, m_subtitleTracks;
     QHash<QString, qreal> m_positions;
 };

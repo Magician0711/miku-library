@@ -103,6 +103,8 @@ public:
 
     void setWindow(QQuickWindow *window);
     void handleArguments(const QStringList &arguments);
+    // The interface language changed: everything built from C++ text is made again.
+    void retranslate();
     // A backup chosen for import; written by main() once the app has stopped.
     QJsonObject takePendingRestore() { return std::exchange(m_pendingRestore, {}); }
 
@@ -132,6 +134,8 @@ signals:
     void focusSearchRequested();
 
 private:
+    // Asks which video when there are several, then plays it here or in the system player.
+    void playFiles(const QStringList &files, const QString &title);
     void wire();
     void wireSettings();
     void buildTray();
@@ -185,6 +189,7 @@ private:
     QVector<UpdateNotice> m_manualFound;   // notices of a manual check, offered for download at the end
     QStringList m_finished;
     QString m_contextTitle;
+    QString m_detailName;
     QString m_engineState = QStringLiteral("ok");
     QString m_transfer;
     QString m_newVersion;

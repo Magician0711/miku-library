@@ -3,6 +3,8 @@
 
 #include "SitesController.h"
 
+#include <QCoreApplication>
+
 #include "DialogHub.h"
 #include "core/Catalog.h"
 #include "net/HttpClient.h"
@@ -22,24 +24,24 @@ enum Scope { AllSites, Searchable, Directory };
 // Catalog values are short codes; show what they mean.
 QString categoryName(const QString &category)
 {
-    if (category == QStringLiteral("public")) return QStringLiteral("公开");
-    if (category == QStringLiteral("private")) return QStringLiteral("需账号");
-    if (category == QStringLiteral("community")) return QStringLiteral("社区");
+    if (category == QStringLiteral("public")) return QCoreApplication::translate("Miku", "公开");
+    if (category == QStringLiteral("private")) return QCoreApplication::translate("Miku", "需账号");
+    if (category == QStringLiteral("community")) return QCoreApplication::translate("Miku", "社区");
     return category;
 }
 QString languageName(const QString &language)
 {
-    static const QHash<QString, QString> names = {
-        {QStringLiteral("zh"), QStringLiteral("中文")}, {QStringLiteral("multi"), QStringLiteral("多语言")},
-        {QStringLiteral("en"), QStringLiteral("英文")}, {QStringLiteral("ja"), QStringLiteral("日文")},
-        {QStringLiteral("es"), QStringLiteral("西班牙文")}};
+    const QHash<QString, QString> names = {
+        {QStringLiteral("zh"), QCoreApplication::translate("Miku", "中文")}, {QStringLiteral("multi"), QCoreApplication::translate("Miku", "多语言")},
+        {QStringLiteral("en"), QCoreApplication::translate("Miku", "英文")}, {QStringLiteral("ja"), QCoreApplication::translate("Miku", "日文")},
+        {QStringLiteral("es"), QCoreApplication::translate("Miku", "西班牙文")}};
     return names.value(language, language);
 }
 QString adapterLabel(AdapterType adapter)
 {
     switch (adapter) {
     case AdapterType::Rss: return QStringLiteral("RSS");
-    case AdapterType::JsonApi: return QStringLiteral("JSON 接口");
+    case AdapterType::JsonApi: return QCoreApplication::translate("Miku", "JSON 接口");
     case AdapterType::None: break;
     }
     return QStringLiteral("—");
@@ -109,16 +111,16 @@ void SitesController::refresh()
             if (!match)
                 continue;
         }
-        QString state = QStringLiteral("未测试"), tone = QStringLiteral("muted");
-        if (m_testing.contains(site.id)) { state = QStringLiteral("正在测试…"); tone = QStringLiteral("active"); }
+        QString state = QCoreApplication::translate("Miku", "未测试"), tone = QStringLiteral("muted");
+        if (m_testing.contains(site.id)) { state = QCoreApplication::translate("Miku", "正在测试…"); tone = QStringLiteral("active"); }
         else if (!site.lastError.isEmpty()) { state = site.lastError; tone = QStringLiteral("error"); }
-        else if (site.lastSuccess.isValid()) { state = QStringLiteral("● 连接正常"); tone = QStringLiteral("done"); }
+        else if (site.lastSuccess.isValid()) { state = QCoreApplication::translate("Miku", "● 连接正常"); tone = QStringLiteral("done"); }
         rows.append({{"siteId", site.id}, {"name", site.name}, {"host", host}, {"url", site.url}, {"category", category},
                      {"language", language}, {"adapter", adapter}, {"searchable", searchable}, {"enabled", site.enabled},
                      {"state", state}, {"tone", tone}});
     }
     m_model->update(rows);
-    m_status = QStringLiteral("%1 个条目 · %2 个搜索源已启用").arg(sites.size()).arg(active);
+    m_status = QCoreApplication::translate("Miku", "%1 个条目 · %2 个搜索源已启用").arg(sites.size()).arg(active);
     emit statusChanged();
 }
 
@@ -126,7 +128,7 @@ void SitesController::setEnabled(const QString &id, bool enabled)
 {
     QString error;
     if (!m_catalog->setEnabled(id, enabled, &error)) {
-        m_dialogs->message(QStringLiteral("站点设置"), error, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "站点设置"), error, QStringLiteral("warning"));
         refresh();
     }
 }
@@ -138,7 +140,7 @@ void SitesController::testSelected()
         return;
     auto provider = std::shared_ptr<SearchProvider>(makeProvider(*site, m_http).release());
     if (!provider) {
-        site->lastError = QStringLiteral("无搜索适配器");
+        site->lastError = QCoreApplication::translate("Miku", "无搜索适配器");
         site->searchAvailable = false;
         refresh();
         return;

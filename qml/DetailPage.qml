@@ -30,16 +30,26 @@ Scaffold {
                 wheel.pinned = true
                 list.settle()
                 side.contentY = 0
+                sideInfo.open = false
             }
         }
     }
     property int shownId: 0
+    // The side column's details with the summary folded; opening the summary leaves the
+    // poster as it was.
+    property real foldedInfo: 0
+    Binding {
+        target: page; property: "foldedInfo"
+        value: sideInfo.implicitHeight
+        when: !sideInfo.open
+        restoreMode: Binding.RestoreNone
+    }
 
     // With no videos yet, finding some is the one thing to do here: the empty page offers it.
     readonly property bool offersSearch: detail.localOnly && detail.emptyVisible
     toolbar: NxButton {
         visible: !page.offersSearch
-        text: page.detail.localOnly ? "查找可下载资源" : "重新搜索"
+        text: page.detail.localOnly ? qsTr("查找可下载资源") : qsTr("重新搜索")
         iconName: page.detail.localOnly ? "search" : "refresh"
         onClicked: page.detail.researchClicked()
     }
@@ -53,29 +63,41 @@ Scaffold {
     // Stays put: only the list on the right moves.
     fixed: Flickable {
         id: side
+        objectName: "detailSide"
         x: page.leading
         y: page.band
         width: page.sideWidth
         height: parent.height - y
         visible: page.wide
         contentHeight: sideColumn.implicitHeight + 24
+        // Runs on under the floating navigation, and ends above it.
+        bottomMargin: Shell.bottomInset
         interactive: false
         boundsBehavior: Flickable.StopAtBounds
         clip: true
-        Tpl.ScrollBar.vertical: NxScrollBar {}
-        SmoothWheel { view: side }
+        // The column stays put until the summary is opened: only then is there more to
+        // read than the window shows. A window too short for even the folded column
+        // still scrolls, so the buttons under the summary stay in reach.
+        readonly property bool scrolls: sideInfo.open || contentHeight + bottomMargin > height + 1
+        onScrollsChanged: if (!scrolls) contentY = originY
+        Tpl.ScrollBar.vertical: NxScrollBar { visible: side.scrolls }
+        SmoothWheel { view: side; enabled: side.scrolls }
         Column {
             id: sideColumn
             width: page.sideWidth
             spacing: 18
             topPadding: 6
             HeroPoster {
-                // As wide as the text under it, so the column has one right edge.
-                width: parent.width
-                height: Math.round(width * 1.414)
+                // As wide as the text under it, so the column has one right edge, unless
+                // the window is too short for the folded column: then it gives up size,
+                // keeping its shape, so the title, details and buttons fit above the
+                // navigation without scrolling.
+                readonly property real room: side.height - side.bottomMargin - sideColumn.topPadding - sideColumn.spacing - page.foldedInfo - 24
+                height: Math.round(Math.min(parent.width * 1.414, Math.max(200, room)))
+                width: Math.round(height / 1.414)
                 cover: page.hero.cover || ""
             }
-            HeroInfo { width: parent.width; titleSize: T.title1 }
+            HeroInfo { id: sideInfo; objectName: "sideInfo"; width: parent.width; titleSize: T.title1 }
         }
     }
 
@@ -85,6 +107,7 @@ Scaffold {
         leftMargin: page.listLeft
         rightMargin: page.trailing
         topMargin: page.band
+        bottomMargin: Shell.bottomInset
         model: page.detail.rows
         interactive: false
         boundsBehavior: Flickable.StopAtBounds
@@ -153,7 +176,7 @@ Scaffold {
                     width: parent.width
                     height: parent.height + (row.first ? 0 : 20) + (row.last ? 0 : 20)
                     radius: 14
-                    color: T.surface
+                    color: T.contentSurface
                 }
             }
             Loader {
@@ -179,14 +202,14 @@ Scaffold {
         iconName: "chevron-left"
         iconSize: 18
         leftPadding: 6; rightPadding: 12
-        tip: "返回" + App.backTitle + " (Esc)"
+        tip: qsTr("返回%1 (Esc)").arg(App.backTitle)
         onClicked: App.closeDetail()
         // In the stacked layout the rows pass underneath, and its own fill is see-through.
         Rectangle {
             z: -2
             anchors.fill: parent
             radius: height / 2
-            color: T.bg
+            color: T.seeThrough ? T.bgTint : T.bg
             visible: !page.wide && page.lift > 4
         }
     }
@@ -322,7 +345,7 @@ Scaffold {
                     visible: release.r && !!release.r.sourcePage
                     iconName: "external"
                     tint: T.text2
-                    tip: "打开发布页"
+                    tip: qsTr("打开发布页")
                     onClicked: page.detail.openPage(release.r.sourcePage)
                 }
                 IconButton {
@@ -397,7 +420,7 @@ Scaffold {
                 title: page.detail.emptyTitle
                 description: page.detail.emptyText
                 shown: page.detail.emptyVisible
-                actionText: page.offersSearch ? "查找可下载资源" : ""
+                actionText: page.offersSearch ? qsTr("查找可下载资源") : ""
                 actionIcon: "search"
                 actionKind: "primary"
                 onAction: page.detail.researchClicked()
@@ -430,7 +453,7 @@ Scaffold {
                     spacing: 10
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: page.detail.localOnly ? "本地视频" : "可用资源"
+                        text: page.detail.localOnly ? qsTr("本地视频") : qsTr("可用资源")
                         color: T.text
                         font.pixelSize: T.title1
                         font.weight: Font.Bold
@@ -440,9 +463,9 @@ Scaffold {
                 NxSelect {
                     anchors.right: parent.right
                     implicitWidth: 124 * Theme.textScale
-                    tip: "排序"
-                    model: [{ text: "推荐", value: "popular" }, { text: "最近更新", value: "latest" }, { text: "做种最多", value: "seeders" },
-                            { text: "资源最多", value: "count" }, { text: "名称", value: "name" }]
+                    tip: qsTr("排序")
+                    model: [{ text: qsTr("推荐"), value: "popular" }, { text: qsTr("最近更新"), value: "latest" }, { text: qsTr("做种最多"), value: "seeders" },
+                            { text: qsTr("资源最多"), value: "count" }, { text: qsTr("名称"), value: "name" }]
                     value: head.filters.sort
                     onChosen: value => page.detail.setFilter("sort", value)
                 }
@@ -459,7 +482,7 @@ Scaffold {
                         required property var modelData
                         spacing: 5
                         Accessible.role: Accessible.StaticText
-                        Accessible.name: modelData.name + " " + ({ ok: "有结果", warn: "没有结果", err: "连接失败", busy: "检索中" })[modelData.state]
+                        Accessible.name: modelData.name + " " + ({ ok: qsTr("有结果"), warn: qsTr("没有结果"), err: qsTr("连接失败"), busy: qsTr("检索中") })[modelData.state]
                         Dot { anchors.verticalCenter: parent.verticalCenter; status: source.modelData.state }
                         Text { text: source.modelData.name; color: T.text2; font.pixelSize: T.callout; Tip { text: source.modelData.tip } }
                     }
@@ -477,9 +500,9 @@ Scaffold {
                         id: filters
                         width: parent.width
                         spacing: 6
-                        // While the sidebar passes the buttons give way a little, instead of
-                        // the last one dropping to a new line and back. A window too narrow
-                        // for one line even at rest wraps as usual.
+                        // Just short of room the buttons give way a little, instead of the
+                        // last one dropping to a new line. A window too narrow for one line
+                        // wraps as usual.
                         readonly property real unit: 124 * Theme.textScale
                         readonly property real needed: unit * 4 + (page.detail.series.length > 1 ? unit * 200 / 124 : unit)
                         readonly property real squeeze: page.restingListWidth - 24 >= needed + 24
@@ -490,7 +513,7 @@ Scaffold {
                             visible: page.detail.series.length > 1
                             implicitWidth: filters.unit * 200 / 124 * filters.squeeze
                             popupWidth: 340
-                            tip: "切换到同名番的其他季度或篇目"
+                            tip: qsTr("切换到同名番的其他季度或篇目")
                             model: page.detail.series
                             value: page.hero.subjectId
                             onChosen: value => page.detail.switchSeries(value)
@@ -499,38 +522,38 @@ Scaffold {
                             // With a series the page already shows one season at a time.
                             visible: page.detail.series.length < 2
                             implicitWidth: filters.unit * filters.squeeze
-                            tip: "放送季度"
+                            tip: qsTr("放送季度")
                             model: page.detail.seasons
                             value: head.filters.season
                             onChosen: value => page.detail.setFilter("season", value)
                         }
                         NxSelect {
                             implicitWidth: filters.unit * filters.squeeze
-                            tip: "资源类型"
-                            model: [{ text: "全部类型", value: "all" }, { text: "合集", value: "batch" }, { text: "单集", value: "single" }]
+                            tip: qsTr("资源类型")
+                            model: [{ text: qsTr("全部类型"), value: "all" }, { text: qsTr("合集"), value: "batch" }, { text: qsTr("单集"), value: "single" }]
                             value: head.filters.kind
                             onChosen: value => page.detail.setFilter("kind", value)
                         }
                         NxSelect {
                             implicitWidth: filters.unit * filters.squeeze
-                            tip: "清晰度"
-                            model: [{ text: "全部清晰度", value: "" }, { text: "4K", value: "2160p" }, { text: "1080p", value: "1080p" }, { text: "720p", value: "720p" }]
+                            tip: qsTr("清晰度")
+                            model: [{ text: qsTr("全部清晰度"), value: "" }, { text: "4K", value: "2160p" }, { text: "1080p", value: "1080p" }, { text: "720p", value: "720p" }]
                             value: head.filters.resolution
                             onChosen: value => page.detail.setFilter("resolution", value)
                         }
                         NxSelect {
                             implicitWidth: filters.unit * filters.squeeze
-                            tip: "字幕语言"
-                            model: [{ text: "全部字幕", value: "" }, { text: "中文", value: "zh" }, { text: "简体", value: "zh-Hans" },
-                                    { text: "繁体", value: "zh-Hant" }, { text: "英文", value: "en" }]
+                            tip: qsTr("字幕语言")
+                            model: [{ text: qsTr("全部字幕"), value: "" }, { text: qsTr("中文"), value: "zh" }, { text: qsTr("简体"), value: "zh-Hans" },
+                                    { text: qsTr("繁体"), value: "zh-Hant" }, { text: qsTr("英文"), value: "en" }]
                             value: head.filters.subtitle
                             onChosen: value => page.detail.setFilter("subtitle", value)
                         }
                         NxSelect {
                             implicitWidth: filters.unit * filters.squeeze
-                            tip: "下载状态"
+                            tip: qsTr("下载状态")
                             enabled: !page.detail.localOnly
-                            model: [{ text: "全部状态", value: "all" }, { text: "已下载", value: "downloaded" }, { text: "未下载", value: "missing" }]
+                            model: [{ text: qsTr("全部状态"), value: "all" }, { text: qsTr("已下载"), value: "downloaded" }, { text: qsTr("未下载"), value: "missing" }]
                             value: head.filters.status
                             onChosen: value => page.detail.setFilter("status", value)
                         }
@@ -542,7 +565,7 @@ Scaffold {
                             width: parent.width - hdr.width - reset.width - 20
                             iconName: "filter"
                             clearable: true
-                            placeholderText: "在结果中筛选标题关键词…"
+                            placeholderText: qsTr("在结果中筛选标题关键词…")
                             text: head.filters.text
                             onTextEdited: page.detail.setFilter("text", text)
                             onTextChanged: if (text !== head.filters.text) page.detail.setFilter("text", text)
@@ -551,7 +574,7 @@ Scaffold {
                             id: hdr
                             anchors.right: reset.left; anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "仅 HDR"
+                            text: qsTr("仅 HDR")
                             checked: head.filters.hdrOnly === true
                             onToggled: page.detail.setFilter("hdrOnly", checked)
                         }
@@ -559,8 +582,8 @@ Scaffold {
                             id: reset
                             anchors.right: parent.right
                             kind: "ghost"
-                            text: "重置"
-                            tip: "重置筛选"
+                            text: qsTr("重置")
+                            tip: qsTr("重置筛选")
                             onClicked: page.detail.resetFilters()
                         }
                     }

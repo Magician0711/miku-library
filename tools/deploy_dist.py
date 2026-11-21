@@ -48,6 +48,20 @@ def main():
         for name in RUNTIME:
             shutil.copy2(CRT / name, stage)
         shutil.copytree(PROJECT / 'config', stage / 'config')
+        # The built-in player: libmpv beside the program, Anime4K under shaders/. Without
+        # libmpv the app opens videos in the system's player instead.
+        mpv = PROJECT / 'third_party/mpv/libmpv-2.dll'
+        if mpv.is_file():
+            shutil.copy2(mpv, stage)
+        else:
+            print('warning: third_party/mpv/libmpv-2.dll is missing; the built-in player will be unavailable')
+        shutil.copytree(PROJECT / 'third_party/anime4k', stage / 'shaders/anime4k')
+        # Motion interpolation: VapourSynth, MVTools and an embedded Python, nothing to install.
+        vapoursynth = PROJECT / 'third_party/vapoursynth'
+        if (vapoursynth / 'Lib/site-packages/vapoursynth/vsscript.dll').is_file():
+            shutil.copytree(vapoursynth, stage / 'vapoursynth')
+        else:
+            print('warning: third_party/vapoursynth is missing (tools/assemble_vapoursynth.py); motion interpolation will need an installed VapourSynth')
         shutil.copy2(PROJECT / 'LICENSE', stage)
         (stage / 'qt.conf').write_text('[Paths]\nPrefix=.\nPlugins=.\nQmlImports=qml\n', encoding='utf-8')
 

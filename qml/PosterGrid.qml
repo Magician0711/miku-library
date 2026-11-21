@@ -20,31 +20,26 @@ Item {
     readonly property real scrolled: grid.contentY - grid.originY + grid.topMargin
 
     readonly property int gap: 20
-    // The sidebar must not change how many columns there are: posters would jump to other
-    // rows. Where it can open for good, count as if it were open, and only the size changes.
-    readonly property real countedWidth: Math.max(1, width - Shell.trailing - (width >= Shell.railBelow ? Shell.openLeading : Shell.foldedLeading))
+    // Columns follow the room between the page margins; navigation floats below, so the
+    // content has the whole width.
+    readonly property real countedWidth: Math.max(1, width - Shell.leading - Shell.trailing)
     // Large windows get larger posters as well as more of them.
     readonly property real minCard: Math.max(168, Math.min(230, countedWidth / 9))
-    readonly property real available: Math.max(minCard, width - Shell.leading - Shell.trailing)
+    readonly property real available: Math.max(minCard, countedWidth)
     readonly property int columns: Math.max(1, Math.floor((countedWidth + gap) / (minCard + gap)))
     function cardAt(room) { return (Math.max(minCard, room) - gap * (columns - 1)) / columns }
-    // Whole pixels at both ends of the sidebar's travel, without a step where it stops:
-    // what rounding takes off is shared out along the way.
-    readonly property real foldedCard: cardAt(width - Shell.trailing - Shell.foldedLeading)
-    readonly property real openCard: cardAt(width - Shell.trailing - Shell.openLeading)
-    function along(atFolded, atOpen) { return atFolded + (atOpen - atFolded) * Shell.sidebarReveal }
-    readonly property real cardWidth: cardAt(available) + along(Math.floor(foldedCard) - foldedCard, Math.floor(openCard) - openCard)
-    function heightError(card) { const exact = Math.floor(card) * 1.414; return Math.round(exact) - exact }
-    readonly property real posterHeight: cardWidth * 1.414 + along(heightError(foldedCard), heightError(openCard))
+    // Whole pixels, so poster edges stay sharp.
+    readonly property real cardWidth: Math.floor(cardAt(available))
+    readonly property real posterHeight: Math.round(cardWidth * 1.414)
 
     // Covers are decoded for the largest size they take with this window, in steps, and
     // only once the window has stopped changing: following the card would reload every
-    // poster on every frame of a sidebar motion or a window drag.
+    // poster on every frame of a window drag.
     property int decodeWidth: 0
     property real coverRadius: 12
     function settleCovers() {
-        decodeWidth = Math.ceil(Math.max(1, foldedCard) / 40) * 40
-        coverRadius = 12 * decodeWidth / Math.max(1, cardAt(countedWidth))
+        decodeWidth = Math.ceil(Math.max(1, cardWidth) / 40) * 40
+        coverRadius = 12 * decodeWidth / Math.max(1, cardWidth)
     }
     Timer { id: coverSettle; interval: 300; onTriggered: root.settleCovers() }
     onWidthChanged: {
@@ -60,7 +55,8 @@ Item {
         leftMargin: Shell.leading
         rightMargin: Shell.trailing - root.gap
         topMargin: root.topInset
-        bottomMargin: 20
+        // Ends above the floating navigation; until then the posters pass beneath it.
+        bottomMargin: 20 + Shell.bottomInset
         cellWidth: root.cardWidth + root.gap
         cellHeight: root.posterHeight + 96
         model: root.controller.model
@@ -94,7 +90,7 @@ Item {
         x: Shell.leading
         y: root.topInset
         width: root.available
-        height: root.height - root.topInset - 40
+        height: root.height - root.topInset - 40 - Shell.bottomInset
         iconName: root.emptyIcon
         title: root.controller.emptyTitle
         description: root.controller.emptyText

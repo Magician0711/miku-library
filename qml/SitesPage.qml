@@ -5,8 +5,8 @@ import QtQuick.Templates as Tpl
 
 Scaffold {
     id: page
-    title: "资源站点"
-    backTip: "返回偏好设置"
+    title: qsTr("资源站点")
+    backTip: qsTr("返回偏好设置")
     onBack: App.selectPage(5)
     subtitle: sites.status
     fixedHeight: 46
@@ -24,8 +24,8 @@ Scaffold {
     readonly property int hostWidth: contentWidth - enabledWidth - nameWidth - categoryWidth - languageWidth - adapterWidth - stateWidth
 
     toolbar: [
-        NxButton { text: "导入配置"; iconName: "import"; onClicked: page.sites.importRequested() },
-        NxButton { text: "导出配置"; iconName: "export"; onClicked: page.sites.exportRequested() }
+        NxButton { text: qsTr("导入配置"); iconName: "import"; onClicked: page.sites.importRequested() },
+        NxButton { text: qsTr("导出配置"); iconName: "export"; onClicked: page.sites.exportRequested() }
     ]
     fixed: Row {
         x: page.leading; y: Shell.band + 2
@@ -35,22 +35,22 @@ Scaffold {
             width: parent.width - scope.width - test.width - 20
             iconName: "search"
             clearable: true
-            placeholderText: "筛选名称、网址、类别或语言"
-            Accessible.name: "筛选资源站点"
+            placeholderText: qsTr("筛选名称、网址、类别或语言")
+            Accessible.name: qsTr("筛选资源站点")
             onTextChanged: page.sites.filter = text
         }
         NxSelect {
             id: scope
             implicitWidth: 140
-            model: [{ text: "全部站点", value: 0 }, { text: "可搜索来源", value: 1 }, { text: "网页目录", value: 2 }]
+            model: [{ text: qsTr("全部站点"), value: 0 }, { text: qsTr("可搜索来源"), value: 1 }, { text: qsTr("网页目录"), value: 2 }]
             value: page.sites.scope
             onChosen: value => page.sites.scope = value
         }
         NxButton {
             id: test
-            text: "测试连接"
+            text: qsTr("测试连接")
             iconName: "pulse"
-            tip: "勾选启用搜索来源；选中一行后可测试连接，也可以双击该行"
+            tip: qsTr("勾选启用搜索来源；选中一行后可测试连接，也可以双击该行")
             enabled: page.sites.selected !== ""
             onClicked: page.sites.testSelected()
         }
@@ -59,7 +59,8 @@ Scaffold {
         id: table
         x: page.leading; y: page.contentTop + 4
         width: page.contentWidth
-        height: Math.min(parent.height - y - 20, 38 + list.contentHeight)
+        // Ends above the floating navigation.
+        height: Math.min(parent.height - y - 20 - Shell.bottomInset, 38 + list.contentHeight)
         clip: true
         component Head: Text {
             height: 38
@@ -71,13 +72,13 @@ Scaffold {
             clip: true
         }
         Row {
-            Head { width: page.enabledWidth; text: "启用" }
-            Head { width: page.nameWidth; text: "名称" }
-            Head { width: page.hostWidth; text: "网址" }
-            Head { width: page.categoryWidth; visible: page.roomy; text: "类别" }
-            Head { width: page.languageWidth; visible: page.roomy; text: "语言" }
-            Head { width: page.adapterWidth; visible: page.roomy; text: "搜索方式" }
-            Head { width: page.stateWidth; text: "连接状态" }
+            Head { width: page.enabledWidth; text: qsTr("启用") }
+            Head { width: page.nameWidth; text: qsTr("名称") }
+            Head { width: page.hostWidth; text: qsTr("网址") }
+            Head { width: page.categoryWidth; visible: page.roomy; text: qsTr("类别") }
+            Head { width: page.languageWidth; visible: page.roomy; text: qsTr("语言") }
+            Head { width: page.adapterWidth; visible: page.roomy; text: qsTr("搜索方式") }
+            Head { width: page.stateWidth; text: qsTr("连接状态") }
         }
         Divider { y: 37; width: parent.width }
         ListView {
@@ -120,16 +121,16 @@ Scaffold {
                     checked: row.enabled
                     focusPolicy: Qt.TabFocus
                     onToggled: page.sites.setEnabled(row.siteId, checked)
-                    Tip { text: "参与番剧资源搜索" }
+                    Tip { text: qsTr("参与番剧资源搜索") }
                 }
                 Text {
                     x: 12
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !row.searchable
-                    text: "网页"
+                    text: qsTr("网页")
                     color: T.text3
                     font.pixelSize: T.callout
-                    Tip { text: "网页目录，没有搜索适配器" }
+                    Tip { text: qsTr("网页目录，没有搜索适配器") }
                 }
                 component Cell: Text {
                     anchors.verticalCenter: parent.verticalCenter

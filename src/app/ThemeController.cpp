@@ -34,16 +34,24 @@ bool ThemeController::animated() const
 
 bool ThemeController::transparency() const
 {
+#ifdef Q_OS_WIN
     const QSettings personalize(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"), QSettings::NativeFormat);
     return personalize.value(QStringLiteral("EnableTransparency"), 1).toInt() != 0;
+#else
+    return true;
+#endif
 }
 
 qreal ThemeController::textScale() const
 {
     bool forced = false;
     const qreal fromEnvironment = qEnvironmentVariable("MIKU_LIBRARY_TEXT_SCALE").toDouble(&forced);
+    qreal system = 1.0;
+#ifdef Q_OS_WIN
     const QSettings accessibility(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Accessibility"), QSettings::NativeFormat);
-    return qBound(1.0, forced ? fromEnvironment : accessibility.value(QStringLiteral("TextScaleFactor"), 100).toDouble() / 100.0, 1.5);
+    system = accessibility.value(QStringLiteral("TextScaleFactor"), 100).toDouble() / 100.0;
+#endif
+    return qBound(1.0, forced ? fromEnvironment : system, 1.5);
 }
 
 bool ThemeController::highContrast() const

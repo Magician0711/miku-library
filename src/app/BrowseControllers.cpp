@@ -3,6 +3,8 @@
 
 #include "BrowseControllers.h"
 
+#include <QCoreApplication>
+
 #include "core/Database.h"
 #include "core/LocalLibrary.h"
 #include "net/BangumiClient.h"
@@ -15,16 +17,20 @@
 #include <algorithm>
 
 namespace {
-const QStringList kDayNames = {QStringLiteral("周一"), QStringLiteral("周二"), QStringLiteral("周三"),
-                               QStringLiteral("周四"), QStringLiteral("周五"), QStringLiteral("周六"),
-                               QStringLiteral("周日")};
-const QString kIdleStatus = QStringLiteral("支持原名与别名检索");
+// Functions, not constants: they follow the interface language.
+QStringList dayNames()
+{
+    return {QCoreApplication::translate("Miku", "周一"), QCoreApplication::translate("Miku", "周二"), QCoreApplication::translate("Miku", "周三"),
+                               QCoreApplication::translate("Miku", "周四"), QCoreApplication::translate("Miku", "周五"), QCoreApplication::translate("Miku", "周六"),
+                               QCoreApplication::translate("Miku", "周日")};
+}
+QString idleStatus() { return QCoreApplication::translate("Miku", "支持原名与别名检索"); }
 
 // Bangumi seasons start in January, April, July and October.
 QString seasonLabel()
 {
     const QDate today = QDate::currentDate();
-    return QStringLiteral("%1 年 %2 月新番").arg(today.year()).arg((today.month() - 1) / 3 * 3 + 1);
+    return QCoreApplication::translate("Miku", "%1 年 %2 月新番").arg(today.year()).arg((today.month() - 1) / 3 * 3 + 1);
 }
 
 // Newest year first, then the better rated within a year; undated anime go last.
@@ -87,7 +93,7 @@ void BrowseController::setSubjects(const QVector<AnimeSubject> &subjects)
         QStringList meta;
         if (subject.year > 0) meta << QString::number(subject.year);
         if (!subject.platform.isEmpty()) meta << subject.platform;
-        if (subject.episodeCount > 0) meta << QStringLiteral("%1 话").arg(subject.episodeCount);
+        if (subject.episodeCount > 0) meta << QCoreApplication::translate("Miku", "%1 话").arg(subject.episodeCount);
         rows.append({{"subjectId", subject.bangumiId}, {"title", subject.displayName()},
                      {"meta", meta.join(QStringLiteral(" · "))},
                      {"rating", subject.rating > 0 ? QStringLiteral("★ %1").arg(subject.rating, 0, 'f', 1) : QString()},
@@ -107,7 +113,7 @@ HomeController::HomeController(BangumiClient *bangumi, QObject *parent)
     : BrowseController(parent), m_bangumi(bangumi)
 {
     setStatus(seasonLabel());
-    setEmpty(QStringLiteral("正在准备放送表"), QStringLiteral("新一周的故事，即将开始。"));
+    setEmpty(QCoreApplication::translate("Miku", "正在准备放送表"), QCoreApplication::translate("Miku", "新一周的故事，即将开始。"));
 }
 
 QVariantList HomeController::days() const
@@ -115,9 +121,9 @@ QVariantList HomeController::days() const
     QVariantList list;
     for (int day = 1; day <= 7; ++day) {
         const auto count = m_calendar.value(day).size();
-        const QString &name = kDayNames.at(day - 1);
+        const QString name = dayNames().at(day - 1);
         list << QVariantMap{{"day", day}, {"text", count > 0 ? QStringLiteral("%1  %2").arg(name).arg(count) : name},
-                            {"tip", day == QDate::currentDate().dayOfWeek() ? QStringLiteral("今天") : QString()}};
+                            {"tip", day == QDate::currentDate().dayOfWeek() ? QCoreApplication::translate("Miku", "今天") : QString()}};
     }
     return list;
 }
@@ -125,8 +131,8 @@ QVariantList HomeController::days() const
 void HomeController::load(bool quiet)
 {
     if (!quiet) {
-        setStatus(QStringLiteral("加载中…"));
-        setEmpty(QStringLiteral("加载中…"), QStringLiteral("正在从 Bangumi 获取本季放送表。"));
+        setStatus(QCoreApplication::translate("Miku", "加载中…"));
+        setEmpty(QCoreApplication::translate("Miku", "加载中…"), QCoreApplication::translate("Miku", "正在从 Bangumi 获取本季放送表。"));
         setSubjects({});
     }
 
@@ -138,25 +144,30 @@ void HomeController::load(bool quiet)
         if (quiet && (!error.isEmpty() || cachedAt.isValid()))
             return;
         if (!error.isEmpty()) {
-            setStatus(QStringLiteral("加载失败"));
-            setEmpty(QStringLiteral("加载失败"), error + QStringLiteral("\n点击右上角刷新重试。"));
+            setStatus(QCoreApplication::translate("Miku", "加载失败"));
+            setEmpty(QCoreApplication::translate("Miku", "加载失败"), error + QCoreApplication::translate("Miku", "\n点击右上角刷新重试。"));
             return;
         }
         m_calendar.clear();
         int total = 0;
+        QVector<AnimeSubject> all;
         for (const auto &[weekday, items] : days) {
-            m_calendar.insert(weekday, items);
-            total += items.size();
+            // A show Bangumi has no poster for leaves a grey hole in the grid; searching
+            // by name still finds it.
+            QVector<AnimeSubject> shown;
+            for (const auto &item : items)
+                if (!item.coverUrl.isEmpty())
+                    shown.append(item);
+            m_calendar.insert(weekday, shown);
+            total += shown.size();
+            all += shown;
         }
         m_loaded = true;
         setStatus(cachedAt.isValid()
-                      ? QStringLiteral("离线数据 · 更新于 %1 · 共 %2 部").arg(cachedAt.toString(QStringLiteral("MM-dd HH:mm"))).arg(total)
-                      : QStringLiteral("%1 · 共 %2 部").arg(seasonLabel()).arg(total),
-                  cachedAt.isValid() ? QStringLiteral("暂时无法连接 Bangumi，显示上次成功加载的放送表。点击右上角刷新重试。") : QString());
+                      ? QCoreApplication::translate("Miku", "离线数据 · 更新于 %1 · 共 %2 部").arg(cachedAt.toString(QStringLiteral("MM-dd HH:mm"))).arg(total)
+                      : QCoreApplication::translate("Miku", "%1 · 共 %2 部").arg(seasonLabel()).arg(total),
+                  cachedAt.isValid() ? QCoreApplication::translate("Miku", "暂时无法连接 Bangumi，显示上次成功加载的放送表。点击右上角刷新重试。") : QString());
         emit daysChanged();
-        QVector<AnimeSubject> all;
-        for (const auto &[weekday, items] : days)
-            all += items;
         std::stable_sort(all.begin(), all.end(), [](const AnimeSubject &a, const AnimeSubject &b) { return a.rating > b.rating; });
         emit topRatedChanged(all.mid(0, 24));
         const int today = QDate::currentDate().dayOfWeek();
@@ -183,13 +194,13 @@ void HomeController::showDay(int weekday)
         if (best->rating > 0) meta << QStringLiteral("★ %1").arg(best->rating, 0, 'f', 1);
         if (best->year > 0) meta << QString::number(best->year);
         if (!best->platform.isEmpty()) meta << best->platform;
-        if (best->episodeCount > 0) meta << QStringLiteral("%1 话").arg(best->episodeCount);
+        if (best->episodeCount > 0) meta << QCoreApplication::translate("Miku", "%1 话").arg(best->episodeCount);
         m_featured = {{"subjectId", best->bangumiId}, {"title", best->displayName()}, {"meta", meta.join(QStringLiteral(" · "))},
                       {"summary", best->summary}, {"cover", BangumiClient::coverUrl(best->coverUrl, 480)}};
     }
     emit featuredChanged();
     if (subjects.isEmpty())
-        setEmpty(QStringLiteral("%1暂无放送").arg(kDayNames.value(weekday - 1)), QStringLiteral("换一天看看，或点击刷新。"));
+        setEmpty(QCoreApplication::translate("Miku", "%1暂无放送").arg(dayNames().value(weekday - 1)), QCoreApplication::translate("Miku", "换一天看看，或点击刷新。"));
     else
         hideEmpty();
 }
@@ -223,8 +234,8 @@ void SearchController::search(const QString &text)
     }
     setSubjects({});
     m_found.clear();
-    setStatus(QStringLiteral("搜索中…"));
-    setEmpty(QStringLiteral("搜索中…"), QStringLiteral("Bangumi 查询「%1」").arg(query));
+    setStatus(QCoreApplication::translate("Miku", "搜索中…"));
+    setEmpty(QCoreApplication::translate("Miku", "搜索中…"), QCoreApplication::translate("Miku", "Bangumi 查询「%1」").arg(query));
 
     const int generation = ++m_generation;
     QPointer<SearchController> self(this);
@@ -232,18 +243,18 @@ void SearchController::search(const QString &text)
         if (!self || generation != m_generation)
             return;
         if (!error.isEmpty()) {
-            setStatus(QStringLiteral("搜索失败：") + error);
-            setEmpty(QStringLiteral("搜索失败"), error);
+            setStatus(QCoreApplication::translate("Miku", "搜索失败：") + error);
+            setEmpty(QCoreApplication::translate("Miku", "搜索失败"), error);
             return;
         }
         if (subjects.isEmpty()) {
-            setStatus(QStringLiteral("未找到匹配的番剧"));
-            setEmpty(QStringLiteral("未找到匹配的番剧"), QStringLiteral("换个关键字或使用日文原名试试。"));
+            setStatus(QCoreApplication::translate("Miku", "未找到匹配的番剧"));
+            setEmpty(QCoreApplication::translate("Miku", "未找到匹配的番剧"), QCoreApplication::translate("Miku", "换个关键字或使用日文原名试试。"));
             return;
         }
         m_found = subjects;
         showSorted();
-        setStatus(QStringLiteral("找到 %1 部番剧").arg(subjects.size()));
+        setStatus(QCoreApplication::translate("Miku", "找到 %1 部番剧").arg(subjects.size()));
         hideEmpty();
     });
 }
@@ -266,10 +277,10 @@ void SearchController::reset()
     m_found.clear();
     setSubjects(m_suggestions);
     if (m_suggestions.isEmpty()) {
-        setStatus(kIdleStatus);
-        setEmpty(QStringLiteral("想看些什么？"), QStringLiteral("输入番名开始搜索，进入作品后可查看各站资源。"));
+        setStatus(idleStatus());
+        setEmpty(QCoreApplication::translate("Miku", "想看些什么？"), QCoreApplication::translate("Miku", "输入番名开始搜索，进入作品后可查看各站资源。"));
     } else {
-        setStatus(QStringLiteral("本季评分最高的番剧"));
+        setStatus(QCoreApplication::translate("Miku", "本季评分最高的番剧"));
         hideEmpty();
     }
 }
@@ -290,7 +301,7 @@ LibraryController::LibraryController(Database *db, BangumiClient *bangumi, Local
     m_refreshTimer->setInterval(50);
     connect(m_refreshTimer, &QTimer::timeout, this, &LibraryController::refresh);
     connect(library, &LocalLibrary::changed, this, [this] { if (m_active) m_refreshTimer->start(); });
-    setEmpty(QStringLiteral("你的追番，从这里开始"), QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"));
+    setEmpty(QCoreApplication::translate("Miku", "你的追番，从这里开始"), QCoreApplication::translate("Miku", "在作品详情中点击「追番」，就能在这里找到它。"));
 }
 
 void LibraryController::setScope(int scope)
@@ -330,11 +341,11 @@ void LibraryController::refresh()
         for (auto it = local.cbegin(); it != local.cend(); ++it)
             if (!ids.contains(it.key())) ids.append(it.key());
 
-    setStatus(QStringLiteral("%1 部收藏 · %2 部已下载").arg(followed.size()).arg(local.size()));
+    setStatus(QCoreApplication::translate("Miku", "%1 部收藏 · %2 部已下载").arg(followed.size()).arg(local.size()));
     if (ids.isEmpty()) {
         setSubjects({});
-        if (m_scope == Local) setEmpty(QStringLiteral("还没有下载完成的番剧"), QStringLiteral("下载完成的视频会出现在这里，可直接播放。"));
-        else setEmpty(QStringLiteral("你的追番，从这里开始"), QStringLiteral("在作品详情中点击「追番」，就能在这里找到它。"));
+        if (m_scope == Local) setEmpty(QCoreApplication::translate("Miku", "还没有下载完成的番剧"), QCoreApplication::translate("Miku", "下载完成的视频会出现在这里，可直接播放。"));
+        else setEmpty(QCoreApplication::translate("Miku", "你的追番，从这里开始"), QCoreApplication::translate("Miku", "在作品详情中点击「追番」，就能在这里找到它。"));
         return;
     }
     hideEmpty();

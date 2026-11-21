@@ -3,6 +3,8 @@
 
 #include "DetailController.h"
 
+#include <QCoreApplication>
+
 #include "Format.h"
 #include "core/Catalog.h"
 #include "core/LocalLibrary.h"
@@ -43,8 +45,8 @@ QVariantMap chip(const QString &text, const QString &bg, const QString &fg, cons
 QString groupTitle(const QString &name, qsizetype count)
 {
     if (name == kUnknownGroup)
-        return QStringLiteral("未归档资源    %1 个").arg(count);
-    return QStringLiteral("%1    %2 个资源").arg(name).arg(count);
+        return QCoreApplication::translate("Miku", "未归档资源    %1 个").arg(count);
+    return QCoreApplication::translate("Miku", "%1    %2 个资源").arg(name).arg(count);
 }
 
 QVariantMap option(const QString &text, const QString &value)
@@ -54,7 +56,7 @@ QVariantMap option(const QString &text, const QString &value)
 
 QString seriesNote(const AnimeSubject &subject)
 {
-    QStringList parts{subject.year > 0 ? QString::number(subject.year) : QStringLiteral("未定档")};
+    QStringList parts{subject.year > 0 ? QString::number(subject.year) : QCoreApplication::translate("Miku", "未定档")};
     if (!subject.platform.isEmpty()) parts << subject.platform;
     return parts.join(QStringLiteral(" · "));
 }
@@ -80,7 +82,7 @@ DetailController::DetailController(SearchAggregator *aggregator, BangumiClient *
     connect(m_aggregator, &SearchAggregator::started, this, [this](int count) {
         m_statusTotal = count;
         m_statusDone = 0;
-        m_progress = QStringLiteral("检索中 0/%1").arg(count);
+        m_progress = QCoreApplication::translate("Miku", "检索中 0/%1").arg(count);
         emit sourcesChanged();
     });
 }
@@ -95,9 +97,9 @@ QVariantList DetailController::sources() const
 
 QVariantList DetailController::seasons() const
 {
-    QVariantList list{QVariantMap{{"text", QStringLiteral("全部季度")}, {"value", -1}}};
+    QVariantList list{QVariantMap{{"text", QCoreApplication::translate("Miku", "全部季度")}, {"value", -1}}};
     for (const int season : m_seasons)
-        list << QVariantMap{{"text", QStringLiteral("第 %1 季").arg(season)}, {"value", season}};
+        list << QVariantMap{{"text", QCoreApplication::translate("Miku", "第 %1 季").arg(season)}, {"value", season}};
     return list;
 }
 
@@ -225,6 +227,16 @@ int DetailController::seasonFilter() const
     return numbered > 0 || unnumbered ? own : -1;
 }
 
+void DetailController::retranslate()
+{
+    if (m_subject.bangumiId != 0 || !m_subject.displayName().isEmpty())
+        updateHero();
+    emit seasonsChanged();
+    emit filtersChanged();
+    emit sourcesChanged();
+    renderNow();
+}
+
 void DetailController::cancel()
 {
     ++m_searchGeneration;
@@ -284,9 +296,9 @@ void DetailController::updateHero()
     if (m_subject.rating > 0)
         stats << chip(QStringLiteral("★ %1").arg(m_subject.rating, 0, 'f', 1)
                           + (m_subject.rank > 0 ? QStringLiteral("  #%1").arg(m_subject.rank) : QString()),
-                      "guessedBg", "guessedFg", QStringLiteral("Bangumi 评分与排名"));
+                      "guessedBg", "guessedFg", QCoreApplication::translate("Miku", "Bangumi 评分与排名"));
     QStringList facts;
-    if (m_subject.episodeCount > 0) facts << QStringLiteral("%1 话").arg(m_subject.episodeCount);
+    if (m_subject.episodeCount > 0) facts << QCoreApplication::translate("Miku", "%1 话").arg(m_subject.episodeCount);
     if (!m_subject.airDate.isEmpty()) facts << m_subject.airDate;
     if (!m_subject.platform.isEmpty()) facts << m_subject.platform;
     if (!m_subject.studio.isEmpty()) facts << m_subject.studio;
@@ -298,7 +310,7 @@ void DetailController::updateHero()
 
     const auto preference = m_library->preference(m_subject.bangumiId);
     const int mode = !preference.follow ? 0 : preference.autoDownload ? 2 : 1;
-    static const char *const labels[] = {"追更：关闭", "追更：提醒", "追更：自动下载"};
+    const QString labels[] = {QCoreApplication::translate("Miku", "追更：关闭"), QCoreApplication::translate("Miku", "追更：提醒"), QCoreApplication::translate("Miku", "追更：自动下载")};
 
     m_hero = {
         {"subjectId", m_subject.bangumiId},
@@ -306,18 +318,18 @@ void DetailController::updateHero()
         {"subtitle", alt.join(QStringLiteral("  /  "))},
         {"stats", stats},
         {"tags", tags},
-        {"summary", m_subject.summary.isEmpty() ? QStringLiteral("暂无简介。") : m_subject.summary},
+        {"summary", m_subject.summary.isEmpty() ? QCoreApplication::translate("Miku", "暂无简介。") : m_subject.summary},
         {"following", m_isFollowing(m_subject.bangumiId)},
         {"cover", BangumiClient::coverUrl(m_subject.coverUrl, 400)},
         {"bangumiUrl", m_subject.bangumiUrl},
         {"updatesVisible", !preference.group.isEmpty()},
         {"updatesMode", mode},
-        {"updatesText", QString::fromUtf8(labels[mode])},
+        {"updatesText", labels[mode]},
         {"updatesIcon", mode == 0 ? "minus" : mode == 2 ? "download" : "refresh"},
-        {"updatesTip", mode == 0 ? QStringLiteral("不检查这部番剧的新集")
-             : QStringLiteral("检查「%1」%2的新集，%3").arg(preference.group,
+        {"updatesTip", mode == 0 ? QCoreApplication::translate("Miku", "不检查这部番剧的新集")
+             : QCoreApplication::translate("Miku", "检查「%1」%2的新集，%3").arg(preference.group,
                    preference.resolution.isEmpty() ? QString() : QStringLiteral(" %1 ").arg(preference.resolution),
-                   mode == 2 ? QStringLiteral("发现后直接下载") : QStringLiteral("发现后在右下角提醒"))},
+                   mode == 2 ? QCoreApplication::translate("Miku", "发现后直接下载") : QCoreApplication::translate("Miku", "发现后在右下角提醒"))},
     };
     emit heroChanged();
 }
@@ -368,7 +380,7 @@ void DetailController::startSearch()
     m_groupLimit = kInitialGroups;
     m_statusDone = 0;
     m_statusTotal = m_sources.size();
-    m_progress = QStringLiteral("检索中 0/%1").arg(m_statusTotal);
+    m_progress = QCoreApplication::translate("Miku", "检索中 0/%1").arg(m_statusTotal);
     emit sourcesChanged();
     render();
     if (m_localOnly) {
@@ -437,18 +449,18 @@ void DetailController::onSiteStatus(const SiteStatus &status)
         if (source.id != status.siteId)
             continue;
         source.state = !status.ok ? QStringLiteral("err") : status.count > 0 ? QStringLiteral("ok") : QStringLiteral("warn");
-        source.tip = QStringLiteral("%1 条 · %2s").arg(status.count).arg(status.elapsed, 0, 'f', 1);
+        source.tip = QCoreApplication::translate("Miku", "%1 条 · %2s").arg(status.count).arg(status.elapsed, 0, 'f', 1);
         if (!status.error.isEmpty())
             source.tip += QStringLiteral("\n") + status.error;
     }
-    m_progress = QStringLiteral("检索中 %1/%2").arg(m_statusDone).arg(m_statusTotal);
+    m_progress = QCoreApplication::translate("Miku", "检索中 %1/%2").arg(m_statusDone).arg(m_statusTotal);
     emit sourcesChanged();
 }
 
 void DetailController::onFinished()
 {
     setSearching(false);
-    m_progress = QStringLiteral("已检索 %1 个站点").arg(m_statusTotal);
+    m_progress = QCoreApplication::translate("Miku", "已检索 %1 个站点").arg(m_statusTotal);
     emit sourcesChanged();
     setSeasons(seasonsPresent(m_releases + m_library->localReleases(m_subject.bangumiId)));
     render();
@@ -465,9 +477,9 @@ QVariantMap DetailController::releaseRow(const Release &release, const RowState 
     const auto &result = release.result;
     QString episodeText;
     if (release.isBatch)
-        episodeText = release.episode.isEmpty() || release.episode == QStringLiteral("合集") ? QStringLiteral("合集") : release.episode;
+        episodeText = release.episode.isEmpty() || release.episode == QStringLiteral("合集") ? QCoreApplication::translate("Miku", "合集") : release.episode;
     else if (!release.episode.isEmpty())
-        episodeText = QStringLiteral("第 %1 话").arg(release.episode);
+        episodeText = QCoreApplication::translate("Miku", "第 %1 话").arg(release.episode);
     else
         episodeText = QStringLiteral("—");
 
@@ -479,10 +491,10 @@ QVariantMap DetailController::releaseRow(const Release &release, const RowState 
     if (!sites.isEmpty()) meta << sites.join(QStringLiteral(" · "));
 
     const QString link = result.magnetUri.isEmpty() ? result.torrentUrl : result.magnetUri;
-    QString action = QStringLiteral("下载");
-    if (state.ready) action = QStringLiteral("播放");
-    else if (state.external) action = QStringLiteral("已发送");
-    else if (state.active) action = QStringLiteral("下载中");
+    QString action = QCoreApplication::translate("Miku", "下载");
+    if (state.ready) action = QCoreApplication::translate("Miku", "播放");
+    else if (state.external) action = QCoreApplication::translate("Miku", "已发送");
+    else if (state.active) action = QCoreApplication::translate("Miku", "下载中");
 
     const QString key = QStringLiteral("r|%1|%2|%3").arg(group, result.rowKey(), result.localPath);
     m_shown.insert(key, result);
@@ -490,13 +502,13 @@ QVariantMap DetailController::releaseRow(const Release &release, const RowState 
         {"key", key}, {"kind", "release"}, {"group", group}, {"text", result.title}, {"first", false}, {"last", last},
         {"episode", episodeText}, {"batch", release.isBatch}, {"chips", Format::qualityChips(result.tags)},
         {"meta", meta.join(QStringLiteral("  ·  "))},
-        {"metaTip", sites.isEmpty() ? QString() : QStringLiteral("来源：") + sites.join(QStringLiteral("、"))},
+        {"metaTip", sites.isEmpty() ? QString() : QCoreApplication::translate("Miku", "来源：") + sites.join(QStringLiteral("、"))},
         {"sourcePage", result.sourcePage},
         {"copyVisible", result.localPath.isEmpty()}, {"copyEnabled", !link.isEmpty()},
-        {"copyTip", result.magnetUri.isEmpty() ? QStringLiteral("复制种子链接") : QStringLiteral("复制磁力链接")},
+        {"copyTip", result.magnetUri.isEmpty() ? QCoreApplication::translate("Miku", "复制种子链接") : QCoreApplication::translate("Miku", "复制磁力链接")},
         {"actionText", action}, {"actionIcon", state.ready ? "play" : state.external ? "external" : "download"},
         {"actionPrimary", state.ready}, {"actionEnabled", state.ready || (!state.active && !link.isEmpty() && !m_localOnly)},
-        {"actionTip", state.external ? QStringLiteral("已交给外部下载器，请在该软件中查看任务。") : QString()},
+        {"actionTip", state.external ? QCoreApplication::translate("Miku", "已交给外部下载器，请在该软件中查看任务。") : QString()},
     };
 }
 
@@ -574,33 +586,33 @@ void DetailController::render()
                      {"text", groupTitle(group.name, group.releases.size())}, {"first", true}, {"last", rowCount == 0},
                      {"expanded", expanded}, {"bulkVisible", !unarchived}, {"bulkEnabled", !m_searching && hasCandidates && !unarchived},
                      {"bulkBusy", m_searching && !unarchived}, {"bulkIcon", history ? "refresh" : "download"},
-                     {"bulkText", history ? QStringLiteral("更新") : QStringLiteral("一键下载")},
-                     {"bulkTip", m_searching ? QStringLiteral("正在检索最新话数…") : QStringLiteral("选择字幕、清晰度和集数，下载本字幕组缺少的正片")},
-                     {"headerTip", unarchived ? QStringLiteral("未能识别字幕组的资源合并显示在这里，可单独下载，不支持一键下载。") : QString()}});
+                     {"bulkText", history ? QCoreApplication::translate("Miku", "更新") : QCoreApplication::translate("Miku", "一键下载")},
+                     {"bulkTip", m_searching ? QCoreApplication::translate("Miku", "正在检索最新话数…") : QCoreApplication::translate("Miku", "选择字幕、清晰度和集数，下载本字幕组缺少的正片")},
+                     {"headerTip", unarchived ? QCoreApplication::translate("Miku", "未能识别字幕组的资源合并显示在这里，可单独下载，不支持一键下载。") : QString()}});
         for (int r = 0; r < rowCount; ++r)
             rows.append(releaseRow(group.releases.at(r), stateOf(group.releases.at(r).result), group.name, r == rowCount - 1 && !hasMore));
         if (hasMore)
             rows.append({{"key", QStringLiteral("m|") + group.name}, {"kind", "moreRows"}, {"group", group.name}, {"first", false}, {"last", true},
                          {"expanded", showAll},
-                         {"text", showAll ? QStringLiteral("收起") : QStringLiteral("显示其余 %1 个资源").arg(group.releases.size() - kRowsPerGroup)}});
+                         {"text", showAll ? QCoreApplication::translate("Miku", "收起") : QCoreApplication::translate("Miku", "显示其余 %1 个资源").arg(group.releases.size() - kRowsPerGroup)}});
     }
     if (groups.size() > limit)
         rows.append({{"key", QStringLiteral("more")}, {"kind", "moreGroups"}, {"first", true}, {"last", true},
-                     {"text", QStringLiteral("显示更多发布组（剩余 %1 个）").arg(groups.size() - limit)}});
+                     {"text", QCoreApplication::translate("Miku", "显示更多发布组（剩余 %1 个）").arg(groups.size() - limit)}});
     m_rows->update(rows);
 
-    const QString count = QStringLiteral("%1 个资源 · %2 个发布组").arg(shown.size()).arg(groups.size())
-        + (!m_localOnly && state == "all" && shown.size() != m_releases.size() ? QStringLiteral("（共 %1）").arg(m_releases.size()) : QString());
+    const QString count = QCoreApplication::translate("Miku", "%1 个资源 · %2 个发布组").arg(shown.size()).arg(groups.size())
+        + (!m_localOnly && state == "all" && shown.size() != m_releases.size() ? QCoreApplication::translate("Miku", "（共 %1）").arg(m_releases.size()) : QString());
     if (!groups.isEmpty())
         setResults(count, {}, {}, false);
     else if (m_localOnly)
-        setResults(count, QStringLiteral("还没有下载完成的视频"), QStringLiteral("下载完成的视频会按字幕组显示在这里。"), true);
+        setResults(count, QCoreApplication::translate("Miku", "还没有下载完成的视频"), QCoreApplication::translate("Miku", "下载完成的视频会按字幕组显示在这里。"), true);
     else if (m_searching && m_releases.isEmpty())
-        setResults(QString(), QStringLiteral("正在搜索资源…"), QStringLiteral("从已启用的资源站并发检索，结果会逐步出现。"), true);
+        setResults(QString(), QCoreApplication::translate("Miku", "正在搜索资源…"), QCoreApplication::translate("Miku", "从已启用的资源站并发检索，结果会逐步出现。"), true);
     else if (m_releases.isEmpty())
-        setResults(count, QStringLiteral("没有找到资源"), QStringLiteral("各资源站均未返回与本作匹配的结果。可在「资源站点」检查站点状态。"), true);
+        setResults(count, QCoreApplication::translate("Miku", "没有找到资源"), QCoreApplication::translate("Miku", "各资源站均未返回与本作匹配的结果。可在「资源站点」检查站点状态。"), true);
     else
-        setResults(count, QStringLiteral("没有符合筛选条件的资源"), QStringLiteral("试试放宽画质或字幕条件，或点击「重置筛选」。"), true);
+        setResults(count, QCoreApplication::translate("Miku", "没有符合筛选条件的资源"), QCoreApplication::translate("Miku", "试试放宽画质或字幕条件，或点击「重置筛选」。"), true);
 }
 
 void DetailController::toggleGroup(const QString &group)
@@ -704,20 +716,20 @@ void DetailController::askGroupDownload(const QString &group)
     const int low = m_dialogLow, high = m_dialogHigh;
 
     QVariantList quick;
-    quick << QVariantMap{{"text", QStringLiteral("全部 %1–%2 话").arg(low).arg(high)}, {"from", low}, {"to", high}};
-    if (high - low >= 12) quick << QVariantMap{{"text", QStringLiteral("最新 12 话")}, {"from", high - 11}, {"to", high}};
-    if (high - low >= 50) quick << QVariantMap{{"text", QStringLiteral("最新 50 话")}, {"from", high - 49}, {"to", high}};
+    quick << QVariantMap{{"text", QCoreApplication::translate("Miku", "全部 %1–%2 话").arg(low).arg(high)}, {"from", low}, {"to", high}};
+    if (high - low >= 12) quick << QVariantMap{{"text", QCoreApplication::translate("Miku", "最新 12 话")}, {"from", high - 11}, {"to", high}};
+    if (high - low >= 50) quick << QVariantMap{{"text", QCoreApplication::translate("Miku", "最新 50 话")}, {"from", high - 49}, {"to", high}};
 
     // Start from the last choice made for this group, where it still applies.
     const auto saved = m_library->preference(m_subject.bangumiId);
     const bool sameGroup = releaseGroupKey(saved.group) == releaseGroupKey(group);
     m_groupDialog = {
         {"group", group},
-        {"languages", fill(QStringLiteral("不限语言"), {{"zh-Hans", QStringLiteral("简体中文")}, {"zh-Hant", QStringLiteral("繁体中文")},
-             {"bilingual", QStringLiteral("简繁都有")}, {"zh", QStringLiteral("中文")}, {"ja", QStringLiteral("日文")}, {"en", QStringLiteral("英文")}}, langs)},
-        {"types", fill(QStringLiteral("不限形式"), {{"internal", QStringLiteral("内封字幕")}, {"hardcoded", QStringLiteral("内嵌字幕")},
-             {"external", QStringLiteral("外挂字幕")}, {"ass", QStringLiteral("ASS")}, {"srt", QStringLiteral("SRT")}, {"pgs", QStringLiteral("PGS")}}, types)},
-        {"resolutions", fill(QStringLiteral("不限（自动选最高）"), {{"2160p", QStringLiteral("4K")}, {"1440p", QStringLiteral("1440p")},
+        {"languages", fill(QCoreApplication::translate("Miku", "不限语言"), {{"zh-Hans", QCoreApplication::translate("Miku", "简体中文")}, {"zh-Hant", QCoreApplication::translate("Miku", "繁体中文")},
+             {"bilingual", QCoreApplication::translate("Miku", "简繁都有")}, {"zh", QCoreApplication::translate("Miku", "中文")}, {"ja", QCoreApplication::translate("Miku", "日文")}, {"en", QCoreApplication::translate("Miku", "英文")}}, langs)},
+        {"types", fill(QCoreApplication::translate("Miku", "不限形式"), {{"internal", QCoreApplication::translate("Miku", "内封字幕")}, {"hardcoded", QCoreApplication::translate("Miku", "内嵌字幕")},
+             {"external", QCoreApplication::translate("Miku", "外挂字幕")}, {"ass", QStringLiteral("ASS")}, {"srt", QStringLiteral("SRT")}, {"pgs", QStringLiteral("PGS")}}, types)},
+        {"resolutions", fill(QCoreApplication::translate("Miku", "不限（自动选最高）"), {{"2160p", QStringLiteral("4K")}, {"1440p", QStringLiteral("1440p")},
              {"1080p", QStringLiteral("1080p")}, {"720p", QStringLiteral("720p")}, {"480p", QStringLiteral("480p")}}, resolutions)},
         {"low", low}, {"high", high}, {"quick", quick}, {"hasEpisodes", !episodes.isEmpty()},
         {"language", sameGroup ? saved.language : QString()},
@@ -763,15 +775,15 @@ QVariantMap DetailController::previewGroup(const QString &language, const QStrin
     const auto plans = m_library->plan(m_subject, filtered, &reason, false, c.range);
     QString text;
     if (plans.isEmpty()) {
-        text = reason.isEmpty() ? QStringLiteral("没有需要下载的集数（已下载、下载中或无对应资源）") : reason;
+        text = reason.isEmpty() ? QCoreApplication::translate("Miku", "没有需要下载的集数（已下载、下载中或无对应资源）") : reason;
     } else {
         int episodes = 0;
         for (const auto &plan : plans)
             episodes += plan.episodes.isEmpty() ? plan.onlyEpisodes.size() : plan.episodes.size();
-        text = episodes > 0 ? QStringLiteral("预计新建 %1 个任务，共 %2 集").arg(plans.size()).arg(episodes)
-                            : QStringLiteral("预计新建 %1 个任务").arg(plans.size());
+        text = episodes > 0 ? QCoreApplication::translate("Miku", "预计新建 %1 个任务，共 %2 集").arg(plans.size()).arg(episodes)
+                            : QCoreApplication::translate("Miku", "预计新建 %1 个任务").arg(plans.size());
     }
-    return {{"summary", QStringLiteral("符合条件 %1 个资源 · %2").arg(filtered.size()).arg(text)}, {"ready", !plans.isEmpty()}};
+    return {{"summary", QCoreApplication::translate("Miku", "符合条件 %1 个资源 · %2").arg(filtered.size()).arg(text)}, {"ready", !plans.isEmpty()}};
 }
 
 void DetailController::confirmGroup(const QString &language, const QString &subtitleType, const QString &resolution, int first, int last)

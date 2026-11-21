@@ -10,7 +10,7 @@ Rectangle {
     color: T.surface3
     Text {
         anchors.centerIn: parent
-        text: root.cover === "" ? "无封面" : ""
+        text: root.cover === "" ? qsTr("无封面") : ""
         color: T.text2
         font.pixelSize: T.callout
         font.weight: Font.DemiBold

@@ -27,7 +27,7 @@ Rectangle {
             width: parent.width; height: 34
             Column {
                 anchors.verticalCenter: parent.verticalCenter
-                Text { text: "追番有新集"; color: T.text; font.pixelSize: T.title3; font.weight: Font.DemiBold }
+                Text { text: qsTr("追番有新集"); color: T.text; font.pixelSize: T.title3; font.weight: Font.DemiBold }
                 Text { text: App.noticeSummary; color: T.text3; font.pixelSize: T.callout }
             }
             IconButton {
@@ -35,7 +35,7 @@ Rectangle {
                 side: 28
                 iconName: "close"
                 tint: T.text2
-                tip: "暂时关闭（下次启动会再次检查）"
+                tip: qsTr("暂时关闭（下次启动会再次检查）")
                 onClicked: App.closeNotices()
             }
         }
@@ -68,8 +68,8 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 6
-                    NxButton { kind: "ghost"; text: "忽略"; tip: "不再提示这些集数，之后有更新的集时仍会提醒"; onClicked: App.ignoreNotice(row.modelData.subjectId) }
-                    NxButton { kind: "soft"; text: "下载"; onClicked: App.downloadNotice(row.modelData.subjectId) }
+                    NxButton { kind: "ghost"; text: qsTr("忽略"); tip: qsTr("不再提示这些集数，之后有更新的集时仍会提醒"); onClicked: App.ignoreNotice(row.modelData.subjectId) }
+                    NxButton { kind: "soft"; text: qsTr("下载"); onClicked: App.downloadNotice(row.modelData.subjectId) }
                 }
             }
         }
@@ -77,7 +77,7 @@ Rectangle {
             width: parent.width - 8
             height: all.height
             visible: App.notices.length > 1
-            NxButton { id: all; anchors.right: parent.right; kind: "primary"; text: "全部下载"; iconName: "download"; onClicked: App.downloadAllNotices() }
+            NxButton { id: all; anchors.right: parent.right; kind: "primary"; text: qsTr("全部下载"); iconName: "download"; onClicked: App.downloadAllNotices() }
         }
     }
 }

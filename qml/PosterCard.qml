@@ -44,7 +44,7 @@ FocusScope {
         Shadow { blur: hover.hovered ? 22 : 10; offset: hover.hovered ? 8 : 3 }
         Text {
             anchors.centerIn: parent
-            text: card.cover === "" ? "无封面" : ""
+            text: card.cover === "" ? qsTr("无封面") : ""
             color: T.text2
             font.pixelSize: T.callout
             font.weight: Font.DemiBold

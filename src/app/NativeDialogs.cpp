@@ -3,9 +3,13 @@
 
 #include "NativeDialogs.h"
 
+#include <QCoreApplication>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QWindow>
+
+#include <string>
 
 #define NOMINMAX
 #include <windows.h>
@@ -77,13 +81,15 @@ QString chooseDirectory(QWindow *parent, const QString &title, const QString &st
 
 QString openExecutable(QWindow *parent, const QString &start)
 {
-    const Filter filter = {L"Windows 应用程序 (*.exe)", L"*.exe"};
-    return open(parent, QStringLiteral("选择下载器程序"), start, FOS_FILEMUSTEXIST, &filter);
+    const std::wstring name = QCoreApplication::translate("Miku", "Windows 应用程序 (*.exe)").toStdWString();
+    const Filter filter = {name.c_str(), L"*.exe"};
+    return open(parent, QCoreApplication::translate("Miku", "选择下载器程序"), start, FOS_FILEMUSTEXIST, &filter);
 }
 
 QString openJson(QWindow *parent, const QString &title)
 {
-    const Filter filter = {L"JSON 配置文件 (*.json)", L"*.json"};
+    const std::wstring name = QCoreApplication::translate("Miku", "JSON 配置文件 (*.json)").toStdWString();
+    const Filter filter = {name.c_str(), L"*.json"};
     return open(parent, title, {}, FOS_FILEMUSTEXIST, &filter);
 }
 
@@ -92,7 +98,8 @@ QString saveJson(QWindow *parent, const QString &title, const QString &fileName)
     Com<IFileSaveDialog> dialog;
     if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(dialog.out()))))
         return {};
-    const COMDLG_FILTERSPEC spec = {L"JSON 配置文件 (*.json)", L"*.json"};
+    const std::wstring name = QCoreApplication::translate("Miku", "JSON 配置文件 (*.json)").toStdWString();
+    const COMDLG_FILTERSPEC spec = {name.c_str(), L"*.json"};
     dialog->SetFileTypes(1, &spec);
     dialog->SetDefaultExtension(L"json");
     const QFileInfo info(fileName);

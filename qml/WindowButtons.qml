@@ -64,18 +64,18 @@ Row {
     }
     Caption {
         visible: !root.closeOnly
-        glyph: "minimize"; tip: "最小化"
+        glyph: "minimize"; tip: qsTr("最小化")
         onActivated: root.window.showMinimized()
     }
     Caption {
         readonly property bool maximized: root.window.visibility === 4
         visible: !root.closeOnly
         glyph: maximized ? "restore" : "maximize"
-        tip: maximized ? "还原" : "最大化"
+        tip: maximized ? qsTr("还原") : qsTr("最大化")
         onActivated: maximized ? root.window.showNormal() : root.window.showMaximized()
     }
     Caption {
-        glyph: "close"; tip: "关闭"; danger: true
+        glyph: "close"; tip: qsTr("关闭"); danger: true
         onActivated: root.window.close()
     }
 }

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Miku Library
+Name[zh_CN]=Miku Library
+GenericName=Anime library and downloader
+GenericName[zh_CN]=番剧资源与下载
+GenericName[zh_TW]=番劇資源與下載
+GenericName[ja]=アニメライブラリとダウンローダー
+Comment=Seasonal anime, resource search, downloads and a built-in player
+Comment[zh_CN]=本季放送、资源搜索、下载与内置播放器
+Exec=miku-library
+Icon=miku-library
+Terminal=false
+Categories=AudioVideo;Video;Network;P2P;
+StartupWMClass=miku-library

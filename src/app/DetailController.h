@@ -93,6 +93,8 @@ public:
 
     // Runs the coalesced render at once; tests use it to skip the delay.
     void renderNow();
+    // The interface language changed: rebuild every text made here.
+    void retranslate();
 
 signals:
     void heroChanged();

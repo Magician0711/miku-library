@@ -24,11 +24,16 @@
 
 bool waitUntil(std::function<bool()> test){QElapsedTimer t;t.start();do{QCoreApplication::processEvents();if(test())return true;QThread::msleep(10);}while(t.elapsed()<5000);return false;}
 QByteArray read(const QString &path){QFile f(path);return f.open(QIODevice::ReadOnly)?f.readAll():QByteArray{};}
+#ifdef Q_OS_WIN
+#define EXE_SUFFIX ".exe"
+#else
+#define EXE_SUFFIX ""
+#endif
 int main(int argc,char **argv){
     QCoreApplication app(argc,argv);QTemporaryDir dir;QFile report(QCoreApplication::applicationDirPath()+"/external-downloader-smoke.log");report.open(QIODevice::WriteOnly);int failed=0;
     auto check=[&](bool ok,const char *name){report.write(QByteArray(name)+(ok?" PASS\n":" FAIL\n"));report.flush();if(!ok)++failed;};
     DownloaderSettings settings;check(settings.selected=="builtin","builtin remains the default");
-    settings.selected="custom";settings.programs["custom"]=QCoreApplication::applicationDirPath()+"/ExternalClientProbe.exe";
+    settings.selected="custom";settings.programs["custom"]=QCoreApplication::applicationDirPath()+"/ExternalClientProbe"+QStringLiteral(EXE_SUFFIX);
     settings.programs["qbittorrent"]=QStringLiteral("C:/程序 文件/qbittorrent.exe");settings.customArguments="\"{input}\" \"{saveDir}\"";
     const auto reloaded=DownloaderSettings::fromJson(settings.toJson());
     check(reloaded.programs==settings.programs&&reloaded.customArguments==settings.customArguments&&reloaded.selected=="custom","per-type paths and arguments survive JSON roundtrip");

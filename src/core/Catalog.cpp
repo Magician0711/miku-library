@@ -3,6 +3,8 @@
 
 #include "Catalog.h"
 
+#include <QCoreApplication>
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -188,18 +190,18 @@ bool Catalog::save(const QString &path) const
 bool Catalog::setEnabled(const QString &id,bool enabled,QString *error)
 {
     auto *site=get(id);if(!site)return false;
-    if(enabled&&site->adapter==AdapterType::None){if(error)*error=QStringLiteral("此条目没有搜索适配器，只能作为网页目录使用。");return false;}
+    if(enabled&&site->adapter==AdapterType::None){if(error)*error=QCoreApplication::translate("Miku", "此条目没有搜索适配器，只能作为网页目录使用。");return false;}
     const bool before=site->enabled;site->enabled=enabled;
-    if(!save()){site->enabled=before;if(error)*error=QStringLiteral("无法保存站点配置。");return false;}
+    if(!save()){site->enabled=before;if(error)*error=QCoreApplication::translate("Miku", "无法保存站点配置。");return false;}
     emit catalogChanged();return true;
 }
 
 bool Catalog::importFrom(const QString &path,QString *error)
 {
     Catalog candidate(path);
-    if(!candidate.load()||candidate.sites().isEmpty()){if(error)*error=QStringLiteral("文件没有有效站点，原配置已保留。");return false;}
+    if(!candidate.load()||candidate.sites().isEmpty()){if(error)*error=QCoreApplication::translate("Miku", "文件没有有效站点，原配置已保留。");return false;}
     const auto previous=m_catalog;m_catalog=candidate.m_catalog;
-    if(!save()){m_catalog=previous;if(error)*error=QStringLiteral("无法保存导入的站点配置。");return false;}
+    if(!save()){m_catalog=previous;if(error)*error=QCoreApplication::translate("Miku", "无法保存导入的站点配置。");return false;}
     emit catalogChanged();return true;
 }
 

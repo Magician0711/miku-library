@@ -3,6 +3,8 @@
 
 #include "AppConfig.h"
 
+#include <QCoreApplication>
+
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -23,6 +25,19 @@ PathConfig::PathConfig()
     : downloadDir(QDir(systemDownloads()).filePath(QStringLiteral("library")))
     , libraryDir(QDir::homePath() + QStringLiteral("/AnimeLibrary"))
 {
+}
+
+QString AppConfig::resourcePath(const QString &relative)
+{
+    const QString dir = QCoreApplication::applicationDirPath();
+    const QString beside = QDir(dir).filePath(relative);
+    for (const QString &candidate : {beside,
+                                     QDir(dir).filePath(QStringLiteral("../Resources/") + relative),
+                                     QDir(dir).filePath(QStringLiteral("../share/miku-library/") + relative)}) {
+        if (QFileInfo::exists(candidate))
+            return QDir::cleanPath(candidate);
+    }
+    return beside;
 }
 
 QString AppConfig::dataDir()
@@ -59,6 +74,7 @@ AppConfig AppConfig::load()
     }
     cfg.theme = root.value(QStringLiteral("theme")).toString(cfg.theme);
     cfg.appearance = root.value(QStringLiteral("appearance")).toString(cfg.appearance);
+    cfg.language = root.value(QStringLiteral("language")).toString(cfg.language);
     cfg.disclaimerAccepted = root.value(QStringLiteral("disclaimer_accepted")).toInt(cfg.disclaimerAccepted);
     cfg.checkAppUpdates = root.value(QStringLiteral("check_app_updates")).toBool(cfg.checkAppUpdates);
     cfg.closeAction = root.value(QStringLiteral("close_action")).toString(cfg.closeAction);
@@ -98,6 +114,7 @@ bool AppConfig::save() const
     root.insert("downloader",downloader.toJson());
     root.insert(QStringLiteral("theme"), theme);
     root.insert(QStringLiteral("appearance"), appearance);
+    root.insert(QStringLiteral("language"), language);
     root.insert(QStringLiteral("disclaimer_accepted"), disclaimerAccepted);
     root.insert(QStringLiteral("check_app_updates"), checkAppUpdates);
     root.insert(QStringLiteral("close_action"), closeAction);
@@ -126,13 +143,13 @@ AppConfig::DownloadDirectoryState AppConfig::prepareDownloadDirectory(QString *e
     if(error)error->clear();
     if(hasSavedDownloadDirectory) {
         if(QFileInfo(engine.savePath).isDir())return DownloadDirectoryState::Ready;
-        if(error)*error=QStringLiteral("保存的下载目录不存在，或该位置已不再是文件夹。请更换目标下载目录。");
+        if(error)*error=QCoreApplication::translate("Miku", "保存的下载目录不存在，或该位置已不再是文件夹。请更换目标下载目录。");
         return DownloadDirectoryState::MissingSaved;
     }
     const QString root=downloadsRoot.isEmpty()?systemDownloads():downloadsRoot;
     const QString target=QDir(root).absoluteFilePath(QStringLiteral("library"));
     if(!QDir().mkpath(target) || !QFileInfo(target).isDir()) {
-        if(error)*error=QStringLiteral("无法在系统下载文件夹中创建 library，请选择其他下载目录。");
+        if(error)*error=QCoreApplication::translate("Miku", "无法在系统下载文件夹中创建 library，请选择其他下载目录。");
         return DownloadDirectoryState::Error;
     }
     engine.savePath=target;paths.downloadDir=target;hasSavedDownloadDirectory=true;

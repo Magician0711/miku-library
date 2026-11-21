@@ -5,5 +5,5 @@ import QtQuick
 // An inset group: the one container shape in the content layer.
 Rectangle {
     radius: 14
-    color: T.surface
+    color: T.contentSurface
 }

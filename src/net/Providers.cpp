@@ -3,6 +3,8 @@
 
 #include "Providers.h"
 
+#include <QCoreApplication>
+
 #include "FeedParser.h"
 #include "HttpClient.h"
 #include "core/TitleParser.h"
@@ -171,7 +173,7 @@ public:
             }
             QString parseError;
             const auto results = parseRss(data, site, &parseError);
-            callback(parseError.isEmpty(),parseError.isEmpty()?QStringLiteral("HTTP %1，%2 条").arg(status).arg(results.size()):parseError);
+            callback(parseError.isEmpty(),parseError.isEmpty()?QCoreApplication::translate("Miku", "HTTP %1，%2 条").arg(status).arg(results.size()):parseError);
         });
     }
 private:
@@ -183,7 +185,7 @@ private:
             QString parseError;collected+=parseRss(bytes,m_site,&parseError);if(!parseError.isEmpty()){callback(collected,parseError);return;}
             QXmlStreamReader xml(bytes);QUrl next;while(!xml.atEnd()){xml.readNext();if(xml.isStartElement()&&xml.name()=="link"&&xml.attributes().value("rel")=="next")next=url.resolved(QUrl(xml.attributes().value("href").toString()));}
             if(next.isEmpty()){callback(collected,{});return;}
-            if(next.scheme()!=url.scheme()||next.host()!=url.host()||next.port()!=url.port()||visited.contains(next.toString())||visited.size()>=100){callback(collected,QStringLiteral("RSS 分页受限，结果可能不完整。"));return;}
+            if(next.scheme()!=url.scheme()||next.host()!=url.host()||next.port()!=url.port()||visited.contains(next.toString())||visited.size()>=100){callback(collected,QCoreApplication::translate("Miku", "RSS 分页受限，结果可能不完整。"));return;}
             page(next,std::move(collected),std::move(visited),std::move(callback));
         });
     }
@@ -218,7 +220,7 @@ public:
                     return;
                 }
                 if (!ok || !doc.isObject()) {
-                    callback({}, QStringLiteral("Bangumi.Moe 返回了无效 JSON"));
+                    callback({}, QCoreApplication::translate("Miku", "Bangumi.Moe 返回了无效 JSON"));
                     return;
                 }
                 callback(parseBangumiMoe(doc.object(), site), {});
@@ -241,7 +243,7 @@ public:
                     return;
                 }
                 if (!ok) {
-                    callback({}, QStringLiteral("SubsPlease 返回了无效 JSON"));
+                    callback({}, QCoreApplication::translate("Miku", "SubsPlease 返回了无效 JSON"));
                     return;
                 }
                 callback(parseSubsPlease(doc, site), {});
@@ -255,7 +257,7 @@ public:
             if (!error.isEmpty())
                 callback(false, error);
             else
-                callback(true, QStringLiteral("API OK，%1 条").arg(results.size()));
+                callback(true, QCoreApplication::translate("Miku", "API OK，%1 条").arg(results.size()));
         });
     }
 
@@ -269,7 +271,7 @@ private:
         QObject::connect(reply,&QNetworkReply::finished,reply,[this,reply,term,page,collected=std::move(collected),seen=std::move(seen),callback=std::move(callback)]()mutable {
             const auto error=HttpClient::replyError(reply);bool valid=false;const auto doc=HttpClient::json(reply,&valid);reply->deleteLater();
             if(!error.isEmpty()||!valid||!doc.isObject()||doc.object().value("status").toString()=="ERROR") {
-                callback(collected,error.isEmpty()?QStringLiteral("Anime Garden 返回了无效数据，结果可能不完整。"):error);return;
+                callback(collected,error.isEmpty()?QCoreApplication::translate("Miku", "Anime Garden 返回了无效数据，结果可能不完整。"):error);return;
             }
             const auto root=doc.object();const auto results=parseAnimeGarden(root,m_site);int added=0;
             for(const auto &r:results)if(!seen.contains(r.dedupKey())){seen.insert(r.dedupKey());collected.append(r);++added;}
@@ -277,7 +279,7 @@ private:
             const bool complete=pagination.contains("complete")?pagination.value("complete").toBool():results.size()<100;
             if(complete||results.isEmpty()){callback(collected,{});return;}
             if(!added||page>=qBound(1,m_site.raw.value("max_pages").toInt(100),500)) {
-                callback(collected,QStringLiteral("已到分页保护上限或站点重复返回同一页，结果可能不完整。"));return;
+                callback(collected,QCoreApplication::translate("Miku", "已到分页保护上限或站点重复返回同一页，结果可能不完整。"));return;
             }
             gardenPage(term,page+1,std::move(collected),std::move(seen),std::move(callback));
         });

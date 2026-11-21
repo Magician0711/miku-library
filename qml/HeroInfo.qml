@@ -60,22 +60,22 @@ Column {
         NxButton {
             kind: "primary"
             checked: info.hero.following === true
-            text: checked ? "已追番" : "追番"
+            text: checked ? qsTr("已追番") : qsTr("追番")
             iconName: checked ? "check" : "plus"
             onClicked: info.detail.setFollowing(!checked)
         }
         NxButton {
             text: "Bangumi"
             iconName: "external"
-            tip: "打开 Bangumi 页面"
+            tip: qsTr("打开 Bangumi 页面")
             onClicked: info.detail.openPage(info.hero.bangumiUrl)
         }
         NxButton {
             objectName: "summaryMore"
             visible: box.overflows
-            text: info.open ? "收起" : "更多"
+            text: info.open ? qsTr("收起") : qsTr("更多")
             iconName: info.open ? "chevron-up" : "chevron-down"
-            tip: info.open ? "收起简介" : "展开完整简介"
+            tip: info.open ? qsTr("收起简介") : qsTr("展开完整简介")
             onClicked: info.open = !info.open
         }
         NxButton {
@@ -88,9 +88,9 @@ Column {
             onClicked: updatesMenu.popup(updates, 0, updates.height + 4)
             NxMenu {
                 id: updatesMenu
-                NxMenuItem { text: "不追更"; checkable: true; checked: info.hero.updatesMode === 0; onTriggered: info.detail.setUpdatesMode(0) }
-                NxMenuItem { text: "有新集时提醒"; checkable: true; checked: info.hero.updatesMode === 1; onTriggered: info.detail.setUpdatesMode(1) }
-                NxMenuItem { text: "有新集时自动下载"; checkable: true; checked: info.hero.updatesMode === 2; onTriggered: info.detail.setUpdatesMode(2) }
+                NxMenuItem { text: qsTr("不追更"); checkable: true; checked: info.hero.updatesMode === 0; onTriggered: info.detail.setUpdatesMode(0) }
+                NxMenuItem { text: qsTr("有新集时提醒"); checkable: true; checked: info.hero.updatesMode === 1; onTriggered: info.detail.setUpdatesMode(1) }
+                NxMenuItem { text: qsTr("有新集时自动下载"); checkable: true; checked: info.hero.updatesMode === 2; onTriggered: info.detail.setUpdatesMode(2) }
             }
         }
     }

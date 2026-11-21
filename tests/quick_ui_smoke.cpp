@@ -5,9 +5,12 @@
 // the frameless window. A QML warning anywhere fails the run.
 
 #include "app/AppController.h"
+#include "app/LanguageController.h"
 #include "app/Format.h"
 #include "app/ImageProviders.h"
 #include "app/MapListModel.h"
+#include "app/Platform.h"
+#include "app/WindowChrome.h"
 #include "app/StartupFlow.h"
 #include "core/AppConfig.h"
 #include "core/Catalog.h"
@@ -19,7 +22,9 @@
 #include "net/SearchAggregator.h"
 #include "net/TorrentEngine.h"
 
+#include <QBuffer>
 #include <QElapsedTimer>
+#include <QSet>
 #include <QFile>
 #include <QGuiApplication>
 #include <QTimer>
@@ -29,6 +34,9 @@
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QTest>
+#include <QQmlComponent>
+#include <QOperatingSystemVersion>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -36,8 +44,12 @@
 #include <QTemporaryDir>
 #include <QtQml/qqmlextensionplugin.h>
 
+#include <QWheelEvent>
+
+#ifdef Q_OS_WIN
 #define NOMINMAX
 #include <windows.h>
+#endif
 
 Q_IMPORT_QML_PLUGIN(MikuLibraryPlugin)
 
@@ -84,7 +96,8 @@ template <class Test> QQuickItem *findItem(QQuickItem *root, Test test)
 int main(int argc, char **argv)
 {
     QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
-    QGuiApplication app(argc, argv);
+    Platform::prepareGraphics();
+    PlatformApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
     QTemporaryDir dir;
     qputenv("MIKU_LIBRARY_DATA_DIR", dir.path().toUtf8());
@@ -140,6 +153,22 @@ int main(int argc, char **argv)
         delete loader;
         check(true, "cover loader destructor waits for pending workers");
     }
+    {
+        // Bangumi serves some covers thousands of pixels tall and several megabytes large.
+        QImage tall(3000, 5400, QImage::Format_RGB32);
+        quint32 seed = 7;
+        for (int y = 0; y < tall.height(); ++y) {
+            auto *line = reinterpret_cast<quint32 *>(tall.scanLine(y));
+            for (int x = 0; x < tall.width(); ++x) { seed = seed * 1664525u + 1013904223u; line[x] = 0xff000000u | (seed >> 8); }
+        }
+        QByteArray encoded;
+        QBuffer sink(&encoded);
+        sink.open(QIODevice::WriteOnly);
+        tall.save(&sink, "JPG", 95);
+        const QImage cover = ImageLoader::decodeCover(encoded);
+        check(encoded.size() > 4 * 1024 * 1024 && cover.size() == QSize(400, 600), "a cover of several megabytes still shows");
+        check(ImageLoader::decodeCover("not an image").isNull(), "an unreadable cover is left empty");
+    }
 
     {
         // The task list: selection, what the actions offer, and removal.
@@ -161,9 +190,16 @@ int main(int argc, char **argv)
         DownloadsController list(&idle, &tasks, &options, nullptr, &hub);
         list.refresh();
         check(list.model()->count() == 3 && list.summary() == QStringLiteral("共 3 个任务"), "external tasks are listed");
+        check(list.filters().size() == 3 && list.filters().first().toMap().value("text") == QStringLiteral("全部 3"),
+              "the filters count tasks, and failures are only offered when there are some");
+        list.setFilter(2);
+        check(list.filter() == 0 && list.model()->count() == 3, "an empty filter falls back to every task");
+        check(list.pauseText() == QStringLiteral("全部暂停") && list.resumeText() == QStringLiteral("全部开始"),
+              "with nothing selected the buttons act on every task");
         const QString a = list.model()->get(0).value("key").toString(), c = list.model()->get(2).value("key").toString();
         list.selectOnly(a);
         check(list.selectedCount() == 1 && list.model()->get(0).value("selected").toBool(), "a click selects one task");
+        check(list.pauseText() == QStringLiteral("暂停") && !list.canPlay(a), "a selection narrows the buttons; nothing to play yet");
         check(list.canOpenClient() && list.removeText() == QStringLiteral("移除记录"), "one external task offers its client and record removal");
         list.extendTo(c);
         check(list.selectedCount() == 3 && list.allSelected(), "shift extends the selection");
@@ -213,6 +249,8 @@ int main(int argc, char **argv)
     AppConfig config;
     config.closeAction = "ask";
     config.appearance = "light";
+    // The checks below read Chinese text; "system" would follow the test machine.
+    config.language = "zh-CN";
     config.save();
     QFile catalogFile(dir.filePath("catalog.json"));
     catalogFile.open(QIODevice::WriteOnly);
@@ -232,9 +270,13 @@ int main(int argc, char **argv)
     TorrentEngine torrents(config.engine, nullptr, dir.path());
     ThemeController theme(config.appearance);
     WindowChrome chrome;
+    LanguageController language(&config);
     AppController controller(&catalog, &db, &config, &http, &torrents, &aggregator, &bangumi, &theme, &chrome);
+    QObject::connect(&language, &LanguageController::changed, &controller, &AppController::retranslate);
 
     QQmlApplicationEngine engine;
+    QObject::connect(&language, &LanguageController::changed, &engine, &QQmlEngine::retranslate);
+    engine.rootContext()->setContextProperty("Lang", &language);
     engine.rootContext()->setContextProperty("Theme", &theme);
     engine.rootContext()->setContextProperty("Chrome", &chrome);
     engine.rootContext()->setContextProperty("App", &controller);
@@ -269,9 +311,45 @@ int main(int argc, char **argv)
     check(window->flags() & Qt::FramelessWindowHint, "the window draws its own frame");
     {
         auto *logo = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "brandLogo"; });
-        check(logo && logo->property("status").toInt() == 1, "the sidebar shows the logo");
+        check(logo && logo->property("status").toInt() == 1, "the navigation bar shows the logo");
+        // Right after start-up, before anything has moved: the glass already samples
+        // what lies beneath it, not where the bar was before the window was laid out.
+        auto *bar = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "navBar"; });
+        auto *behind = bar ? findItem(bar, [](QQuickItem *item) { return item->objectName() == "glassBehind"; }) : nullptr;
+        const QRectF sampled = behind ? behind->property("sourceRect").toRectF() : QRectF();
+        const QPointF barAt = bar ? bar->mapToScene(QPointF(0, 0)) : QPointF();
+        check(behind && qAbs(sampled.x() - barAt.x()) < 1 && qAbs(sampled.y() - barAt.y()) < 1,
+              QStringLiteral("the glass samples beneath the bar from the start (sampled %1,%2, bar %3,%4)")
+                  .arg(sampled.x()).arg(sampled.y()).arg(barAt.x()).arg(barAt.y()).toUtf8().constData());
         check(!appIcon().isNull() && !appIcon().pixmap(32, 32).isNull(), "the app has its icon");
         check(window->title() == QStringLiteral("Miku Library"), "the window carries the new name");
+    }
+    {
+        // Every language applies at once and comes back, with no QML warning on the way.
+        const auto hasText = [&](const QString &text) {
+            return findItem(window->contentItem(), [&](QQuickItem *item) { return item->property("text").toString() == text; }) != nullptr;
+        };
+        check(LanguageController::resolve("system", {"zh-Hant-TW"}) == "zh-TW" && LanguageController::resolve("system", {"ja-JP"}) == "ja"
+                  && LanguageController::resolve("system", {"de-DE", "fr"}) == "en" && LanguageController::resolve("system", {"zh-CN"}) == "zh-CN",
+              "following the system picks the closest language");
+        check(hasText(QStringLiteral("本季放送")), "the navigation starts in Simplified Chinese");
+        for (const QString code : {"en", "ja", "zh-TW"}) {
+            language.choose(code);
+            settle(50);
+            // Written differently in every language, unlike 本季放送 in Traditional Chinese.
+            const QString downloads = QCoreApplication::translate("Miku", "下载任务");
+            check(language.language() == code && downloads != QStringLiteral("下载任务") && hasText(downloads),
+                  qPrintable(QStringLiteral("the interface switches to %1").arg(code)));
+        }
+        language.choose("en");
+        settle(50);
+        check(hasText(QStringLiteral("This Season")) && controller.contextTitle() == QStringLiteral("This Season"),
+              "English replaces the navigation and the page title");
+        check(QCoreApplication::translate("Miku", "共 %1 个任务").arg(3) == QStringLiteral("3 tasks"), "texts built in C++ follow too");
+        language.choose("zh-CN");
+        settle(50);
+        check(hasText(QStringLiteral("本季放送")) && controller.contextTitle() == QStringLiteral("本季放送"), "Simplified Chinese comes back");
+        config.language = "zh-CN";
     }
     {
         auto *circle = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "closeCircle"; });
@@ -383,6 +461,7 @@ int main(int argc, char **argv)
         settle(300);
     }
 
+#ifdef Q_OS_WIN
     {
         // The window keeps native edges and stays inside the work area when maximised.
         const auto hwnd = HWND(window->winId());
@@ -405,6 +484,30 @@ int main(int argc, char **argv)
         window->showNormal();
         settle(300);
     }
+#elif defined(Q_OS_MACOS)
+    {
+        // The system's title bar, transparent: its buttons, nothing drawn over them.
+        check(window->flags().testFlag(Qt::NoTitleBarBackgroundHint) && !window->flags().testFlag(Qt::FramelessWindowHint),
+              "the window keeps the system title bar for its buttons");
+        auto *buttons = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("WindowButtons"); });
+        check(buttons && !buttons->isVisible(), "the drawn window buttons give way to the system's");
+    }
+#else
+    {
+        // A frameless window that the interface lets the user resize from every edge.
+        check(window->flags().testFlag(Qt::FramelessWindowHint), "the window draws its own frame");
+        auto *left = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "resizeLeft"; });
+        auto *corner = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "resizeCorner"; });
+        check(left && left->isVisible() && left->mapToScene(QPointF(0, 0)).x() == 0, "the left edge resizes");
+        check(corner && corner->isVisible() && qAbs(corner->mapToScene(QPointF(corner->width(), corner->height())).x() - window->width()) < 0.5,
+              "the corner resizes");
+        window->showMaximized();
+        settle(300);
+        check(!left || !left->isVisible(), "a maximised window has no resize edges");
+        window->showNormal();
+        settle(300);
+    }
+#endif
 
     {
         // Enter during IME composition is not a search.
@@ -436,7 +539,7 @@ int main(int argc, char **argv)
     }
 
     {
-        // Whatever the window size, posters fill the width and the sidebar makes room.
+        // Whatever the window size, posters fill the width.
         controller.selectPage(0);
         settle(300);
         auto *grid = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PosterGrid") && item->isVisible(); });
@@ -454,6 +557,19 @@ int main(int argc, char **argv)
             for (const int width : {900, 1100, 1320, 1700, 2400})
                 everyWidth = everyWidth && fills(width);
         check(everyWidth, "posters fill the width at every window size");
+        if (grid) {
+            // Narrowing the window never brings a column back.
+            int previous = 1 << 20;
+            bool fewer = true;
+            for (int width = 1400; width >= 900; width -= 20) {
+                window->resize(width, 760);
+                settle(30);
+                const int columns = grid->property("columns").toInt();
+                fewer = fewer && columns <= previous;
+                previous = columns;
+            }
+            check(fewer, "a narrowing window never gains a column");
+        }
         // The home page holds whatever the network returned, sometimes nothing, so the
         // scrolling is tested on the search page with a grid of known length.
         QVector<AnimeSubject> many;
@@ -495,8 +611,18 @@ int main(int argc, char **argv)
                 }
                 // A real wheel message from Windows, so the whole way to the handler counts:
                 // calling scrollBy alone passed while no wheel event ever reached it.
+#ifdef Q_OS_WIN
                 const QPointF over = window->mapToGlobal(QPointF(700, 400)) * window->devicePixelRatio();
                 PostMessageW(HWND(window->winId()), WM_MOUSEWHEEL, MAKEWPARAM(0, WORD(SHORT(-360))), MAKELPARAM(int(over.x()), int(over.y())));
+#else
+                {
+                    // The window system's own wheel event, delivered the way Qt delivers one.
+                    const QPointF over(700, 400);
+                    QWheelEvent wheel(over, window->mapToGlobal(over), QPoint(), QPoint(0, -360), Qt::NoButton, Qt::NoModifier,
+                                      Qt::NoScrollPhase, false);
+                    QCoreApplication::sendEvent(window, &wheel);
+                }
+#endif
                 for (int waited = 0; waited < 2000 && view->property("contentY").toReal() <= top + 100; waited += 50)
                     settle(50);
                 check(view->property("contentY").toReal() > top + 100, "a wheel event over the posters scrolls them");
@@ -523,22 +649,157 @@ int main(int argc, char **argv)
         controller.selectPage(0);
         settle(320);
         auto *rootItem = qobject_cast<QObject *>(window);
-        window->resize(900, 700);
-        settle(320);
-        check(rootItem->property("rail").toBool() && rootItem->property("sidebarWidth").toInt() < 100, "a narrow window folds the sidebar to icons");
-        window->resize(1320, 860);
-        settle(320);
-        check(!rootItem->property("rail").toBool(), "a wide window opens it again");
+        auto *navBar = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "navBar"; });
+        check(navBar && navBar->isVisible(), "navigation floats at the bottom of the window");
+        if (navBar) {
+            // Centred, clear of the edges, and the pages run on beneath it.
+            const QPointF topLeft = navBar->mapToScene(QPointF(0, 0));
+            check(qAbs(topLeft.x() + navBar->width() / 2 - window->width() / 2.0) < 1 && qAbs(window->height() - (topLeft.y() + navBar->height()) - 14) < 1,
+                  "the navigation bar sits centred above the bottom edge");
+            auto *grid = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PosterGrid") && item->isVisible(); });
+            check(grid && grid->mapToScene(QPointF(0, grid->height())).y() >= window->height() - 1, "the posters run on beneath the navigation bar");
+            {
+                // The glass blurs exactly what lies beneath it.
+                auto *behind = findItem(navBar, [](QQuickItem *item) { return item->objectName() == "glassBehind"; });
+                const QRectF sampled = behind ? behind->property("sourceRect").toRectF() : QRectF();
+                const QPointF at = navBar->mapToScene(QPointF(0, 0));
+                const QString seen = QStringLiteral("sampled %1,%2 %3x%4 bar %5,%6 %7x%8 source %9")
+                    .arg(sampled.x()).arg(sampled.y()).arg(sampled.width()).arg(sampled.height())
+                    .arg(at.x()).arg(at.y()).arg(navBar->width()).arg(navBar->height())
+                    .arg(behind && behind->property("sourceItem").value<QQuickItem *>() ? "set" : "none");
+                check(behind && qAbs(sampled.x() - at.x()) < 1 && qAbs(sampled.y() - at.y()) < 1
+                          && qAbs(sampled.width() - navBar->width()) < 1 && behind->property("sourceItem").value<QQuickItem *>(),
+                      ("the navigation bar blurs what lies beneath it (" + seen + ")").toUtf8().constData());
+                // And the blur is really drawn: with the buttons hidden, the bar is far
+                // smoother than the same stretch of posters just above it.
+                auto *blur = findItem(navBar, [](QQuickItem *item) { return item->objectName() == "glassBlur"; });
+                auto *row = findItem(navBar, [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("QQuickRow"); });
+                auto *pages = navBar->property("backdrop").value<QQuickItem *>();
+                if (blur && blur->isVisible() && row && pages) {
+                    // Fine black and white stripes in the page layer, under the bar and above it.
+                    QQmlComponent stripes(&engine);
+                    stripes.setData("import QtQuick\nRow { z: 1000; Repeater { model: 80; Rectangle { width: 12; height: 200; color: index % 2 ? 'black' : 'white' } } }", QUrl());
+                    auto *pattern = qobject_cast<QQuickItem *>(stripes.create());
+                    if (pattern) {
+                        pattern->setParentItem(pages);
+                        pattern->setPosition(QPointF(at.x(), at.y() + navBar->height() - 200));
+                    }
+                    row->setOpacity(0);
+                    settle(400);
+                    const QImage shot = window->grabWindow();
+                    row->setOpacity(1);
+                    delete pattern;
+                    const qreal dpr = shot.devicePixelRatio();
+                    const QRect bar = QRectF(at.x() + navBar->height() / 2, at.y() + 10, navBar->width() - navBar->height(), navBar->height() - 20).toRect();
+                    const auto roughness = [&](QRect area) {
+                        double total = 0;
+                        const QRect px(QPoint(qRound(area.x() * dpr), qRound(area.y() * dpr)), QSize(qRound(area.width() * dpr), qRound(area.height() * dpr)));
+                        for (int y = px.top(); y <= px.bottom(); ++y)
+                            for (int x = px.left() + 1; x <= px.right(); ++x)
+                                total += qAbs(qGray(shot.pixel(x, y)) - qGray(shot.pixel(x - 1, y)));
+                        return total / qMax(1, px.width() * px.height());
+                    };
+                    const double inside = roughness(bar), above = roughness(bar.translated(0, -bar.height() - 40));
+                    check(inside < above * 0.5, QStringLiteral("the navigation bar's blur is drawn (roughness %1 inside, %2 above)").arg(inside, 0, 'f', 2).arg(above, 0, 'f', 2).toUtf8().constData());
+                }
+            }
+            auto *gridView = grid ? findItem(grid, [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("GridView"); }) : nullptr;
+            check(gridView && gridView->property("bottomMargin").toReal() >= navBar->height() + 28, "the last row of posters ends above it");
+            // At every width the bar fits, and it drops the names only when they would not.
+            bool fits = true, namesWhenRoom = true;
+            for (const int width : {900, 1100, 1320}) {
+                window->resize(width, 760);
+                settle(200);
+                fits = fits && navBar->width() <= window->width() - 48;
+                namesWhenRoom = namesWhenRoom && navBar->property("compact").toBool() == (navBar->property("fullWidth").toReal() > window->width() - 48);
+            }
+            check(fits, "the navigation bar fits the window at every width");
+            check(namesWhenRoom, "the navigation bar keeps the names while they fit");
+            window->resize(1320, 860);
+            // Away from the bar: the real pointer may be resting where the window put it.
+            QTest::mouseMove(window, QPoint(40, 200));
+            settle(700);
+            check(!navBar->property("compact").toBool(), "a wide window has room for the names");
+            check(navBar->property("reveal").toReal() == 0 && navBar->width() < navBar->property("fullWidth").toReal() - 1,
+                  "at rest the navigation bar shows only its icons");
+            const auto pointAt = [&](QPointF scene) {
+                QMouseEvent move(QEvent::MouseMove, scene, scene, window->mapToGlobal(scene), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &move);
+            };
+            auto *middleButton = findItem(navBar, [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("NavButton") && item->property("page").toInt() == 2; });
+            const auto middleCentre = [&] { return middleButton ? middleButton->mapToScene(QPointF(middleButton->width() / 2, 0)).x() : -1.0; };
+            const qreal middleAtRest = middleCentre();
+            pointAt(navBar->mapToScene(QPointF(navBar->width() / 2, navBar->height() / 2)));
+            settle(450);
+            check(middleButton && qAbs(middleCentre() - middleAtRest) < 1,
+                  QStringLiteral("the bar opens around its middle item (moved %1)").arg(middleCentre() - middleAtRest).toUtf8().constData());
+            check(navBar->property("reveal").toReal() == 1 && qAbs(navBar->width() - navBar->property("fullWidth").toReal()) < 1,
+                  "pointing at the navigation bar opens the names");
+            pointAt(QPointF(window->width() / 2.0, 200));
+            settle(800);
+            check(navBar->property("reveal").toReal() == 0, "the names close again when the pointer leaves");
+
+            // The logo leads home, from the keyboard as from the pointer.
+            auto *home = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "homeButton"; });
+            controller.selectPage(3);
+            settle(300);
+            if (home) {
+                home->forceActiveFocus();
+                settle(50);
+                check(navBar->property("expanded").toBool(), "moving the keyboard into the bar opens the names");
+                QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+                QCoreApplication::sendEvent(home, &enter);
+                settle(300);
+            }
+            check(home && controller.page() == 0, "the logo returns to the home page");
+            {
+                // A click on a button stays in the bar: the posters run on beneath it.
+                window->contentItem()->forceActiveFocus();
+                settle(400);
+                auto *settingsButton = findItem(navBar, [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("NavButton") && item->property("page").toInt() == 5; });
+                if (settingsButton) {
+                    const QPointF centre = settingsButton->mapToScene(QPointF(settingsButton->width() / 2, settingsButton->height() / 2));
+                    pointAt(centre);
+                    settle(450);
+                    const QPointF target = settingsButton->mapToScene(QPointF(settingsButton->width() / 2, settingsButton->height() / 2));
+                    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, target.toPoint());
+
+                    settle(600);
+                }
+                check(settingsButton && controller.page() == 5, QStringLiteral("clicking a button in the bar opens its page and nothing beneath it (page %1)").arg(controller.page()).toUtf8().constData());
+                controller.selectPage(0);
+                pointAt(QPointF(window->width() / 2.0, 200));
+                settle(800);
+            }
+            window->contentItem()->forceActiveFocus();
+            settle(700);
+        }
         {
-            // A detail page takes the sidebar's room and gives it back.
+            // The see-through background, where the system offers it (Windows 11 22H2 on).
+            auto *background = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "windowBackground"; });
+            const QColor tint = background ? background->property("color").value<QColor>() : QColor();
+#ifdef Q_OS_WIN
+            const bool acrylic = QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 22621);
+            check(chrome.translucent() == (acrylic && theme.transparency()), "the desktop shows through where Windows can blur it");
+#endif
+            check(background && (chrome.translucent() ? tint.alphaF() < 1 : tint.alphaF() == 1), "the background is a tint over the blur, or solid without one");
+        }
+        {
+            // A detail page keeps the navigation, with nothing in it selected.
             emit controller.home()->animeSelected(subject);
             settle(500);
-            check(rootItem->property("rail").toBool(), "opening a detail page folds the sidebar");
+            auto *thumb = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "navThumb"; });
+            check(thumb && !thumb->isVisible(), "a detail page selects nothing in the navigation");
             {
                 // The artwork and the text under it share one right edge.
                 auto *art = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("HeroPoster") && item->isVisible(); });
                 auto *infoColumn = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("HeroInfo") && item->isVisible(); });
-                check(art && infoColumn && qAbs(art->width() - infoColumn->width()) < 1, "the poster is as wide as the text under it");
+                auto *side = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "detailSide" && item->isVisible(); });
+                const bool sideScrolls = side && side->property("scrolls").toBool();
+                check(art && infoColumn && art->width() <= infoColumn->width() + 1
+                          && (qAbs(art->width() - infoColumn->width()) < 1 || !sideScrolls),
+                      "the poster is as wide as the text under it, or smaller so the column fits");
+                check(side && !sideScrolls, QStringLiteral("the side column stays put while the summary is folded (window %1 high)").arg(window->height()).toUtf8().constData());
 
                 // The summary's toggle is a button beside the others, and only when it is needed.
                 AnimeSubject wordy = subject;
@@ -551,6 +812,8 @@ int main(int argc, char **argv)
                     QMetaObject::invokeMethod(more, "clicked");
                     settle(250);
                     check(more->property("text").toString() == QStringLiteral("收起"), "the button folds the summary again");
+                    auto *openSide = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "detailSide" && item->isVisible(); });
+                    check(openSide && openSide->property("scrolls").toBool(), "an opened long summary lets the side column scroll");
                     QMetaObject::invokeMethod(more, "clicked");
                     settle(250);
                 }
@@ -598,7 +861,7 @@ int main(int argc, char **argv)
                 auto *player = controller.player();
                 check(player->available(), "the built-in player is available");
                 auto *playingNav = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("NavButton") && item->property("page").toInt() == 7; });
-                check(playingNav != nullptr, "the sidebar has a now-playing item");
+                check(playingNav != nullptr, "the navigation has a now-playing item");
                 check(player->open(QStringLiteral("av://lavfi:testsrc=size=640x360:rate=25:duration=30"), QStringLiteral("测试视频"), QStringLiteral("第一集")), "a video opens");
                 controller.selectPage(7);
                 bool started = false;
@@ -607,9 +870,18 @@ int main(int argc, char **argv)
                     started = player->position() > 0.5;
                 }
                 check(started, "playback runs");
-                check(rootItem->property("rail").toBool(), "the player folds the sidebar");
+                {
+                    auto *upscale = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "playerUpscale" && item->isVisible(); });
+                    auto *label = upscale ? upscale->property("contentItem").value<QQuickItem *>() : nullptr;
+                    check(label && label->property("implicitWidth").toReal() <= label->width() + 0.5, "the upscale choice is never cut short");
+                }
                 auto *video = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "playerVideo" && item->isVisible(); });
                 check(video != nullptr, "the picture is on the page");
+                {
+                    auto *bar = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "navBar"; });
+                    check(video && bar && video->mapToScene(QPointF(0, video->height())).y() <= bar->mapToScene(QPointF(0, 0)).y(),
+                          "the picture and its controls end above the navigation bar");
+                }
                 if (video) {
                     settle(400);
                     const QImage shot = window->grabWindow();
@@ -617,6 +889,21 @@ int main(int argc, char **argv)
                     const QPointF middle = video->mapToScene(QPointF(video->width() * 0.3, video->height() * 0.3));
                     const QColor pixel = shot.pixelColor(int(middle.x() * ratio), int(middle.y() * ratio));
                     check(pixel.lightness() > 25, "the picture is drawn, not black");
+                    // testsrc runs a rainbow gradient across the lower part of the frame; the
+                    // colour bars mirrored there would show only a few hues. The picture is
+                    // 16:9, fitted into the item.
+                    const qreal pw = qMin(video->width(), video->height() * 16 / 9), ph = pw * 9 / 16;
+                    const auto hues = [&](qreal row) {
+                        QSet<int> seen;
+                        for (int i = 0; i < 48; ++i) {
+                            const QPointF at = video->mapToScene(QPointF((video->width() - pw) / 2 + pw * (i + 0.5) / 48,
+                                                                         (video->height() - ph) / 2 + ph * row));
+                            const int hue = shot.pixelColor(int(at.x() * ratio), int(at.y() * ratio)).hsvHue();
+                            if (hue >= 0) seen.insert(hue / 15);
+                        }
+                        return seen.size();
+                    };
+                    check(hues(0.81) > hues(0.19) + 4, "the picture is the right way up");
                 }
                 player->setUpscale(1);
                 check(player->shaderList().contains(QStringLiteral("Upscale_CNN_x2_M")), "fast upscaling loads its shaders");
@@ -624,6 +911,47 @@ int main(int argc, char **argv)
                 const qreal upscaling = player->position();
                 settle(900);
                 check(player->position() > upscaling, "playback goes on with upscaling");
+                player->setInterpolation(1);
+                check(player->interpolation() == 1 && player->interpolationState().startsWith(QStringLiteral("display-resample yes")),
+                      "smooth interpolation paces frames to the display and blends them");
+                settle(900);
+                const qreal interpolating = player->position();
+                settle(900);
+                check(player->position() > interpolating, "playback goes on with interpolation");
+                // Asking is not enough: mpv only blends once it has locked onto the screen's
+                // rate, which needs the refresh rate and the swap reports from the video item.
+                check(player->interpolationState().endsWith(QStringLiteral(" yes")), "mpv is in step with the display while interpolating");
+                if (!player->motionAvailable()) {
+                    player->setInterpolation(2);
+                    check(player->interpolation() == 1, "motion interpolation is only offered with VapourSynth");
+                }
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+                // Windows and macOS programs carry VapourSynth and MVTools themselves, nothing to
+                // install; on macOS from 15 on, which MVTools is built for, and once CI has put
+                // the set into the build folder.
+#ifdef Q_OS_MACOS
+                const bool carried = QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 15)
+                                     && QFile::exists(QCoreApplication::applicationDirPath() + "/vapoursynth/python/bin/python3");
+#else
+                const bool carried = true;
+#endif
+                if (carried)
+                    check(player->motionAvailable(), "motion interpolation works out of the box");
+                if (carried && player->motionAvailable()) {
+                    player->setInterpolation(2);
+                    check(player->interpolation() == 2 && player->interpolationState().contains(QStringLiteral("vapoursynth")),
+                          "motion interpolation runs the VapourSynth filter");
+                    settle(3000);
+                    const qreal motion = player->position();
+                    settle(900);
+                    check(player->interpolation() == 2 && player->position() > motion, "playback goes on with motion interpolation");
+                    // The 25 fps test picture leaves MVTools with in-between frames added.
+                    check(player->filteredFps() > 25 * 1.2, "MVTools adds frames in between");
+                    report.write("    motion interpolation output: " + QByteArray::number(player->filteredFps(), 'f', 1) + " fps\n");
+                }
+#endif
+                player->setInterpolation(0);
+                check(player->interpolationState().startsWith(QStringLiteral("audio no")), "turning interpolation off goes back to audio-timed playback");
                 if (video) {
                     // On a held frame the only thing that can change the picture is the shaders.
                     player->togglePause();
@@ -635,11 +963,13 @@ int main(int argc, char **argv)
                     const QImage plain = frame();
                     player->togglePause();
                     const qreal scale = plain.width() / qreal(window->width());
-                    const QPointF corner = video->mapToScene(QPointF(video->width() * 0.25, video->height() * 0.25));
+                    // Over the whole picture: the shaders work on edges, and a small patch can
+                    // fall entirely inside one flat colour bar.
                     qint64 difference = 0;
-                    for (int y = 0; y < 200; y += 2)
-                        for (int x = 0; x < 300; x += 2) {
-                            const QPoint at(int(corner.x() * scale) + x, int(corner.y() * scale) + y);
+                    for (int y = 0; y < 100; ++y)
+                        for (int x = 0; x < 150; ++x) {
+                            const QPointF scene = video->mapToScene(QPointF(video->width() * (x + 0.5) / 150, video->height() * (y + 0.5) / 100));
+                            const QPoint at(int(scene.x() * scale), int(scene.y() * scale));
                             difference += qAbs(qGray(upscaled.pixel(at)) - qGray(plain.pixel(at)));
                         }
                     check(difference > 3000, "the upscaling shaders change the picture");
@@ -661,13 +991,50 @@ int main(int argc, char **argv)
                 settle(500);
                 check(player->videoVisible(), "coming back brings the picture back");
                 {
+                    // Three seconds without moving the pointer hide both bars and the pointer;
+                    // a movement brings them back. A shorter wait keeps the test quick.
+                    auto *idle = rootItem->findChild<QObject *>(QStringLiteral("playerIdle"));
+                    auto *controls = rootItem->findChild<QQuickItem *>(QStringLiteral("playerControls"));
+                    auto *nav = rootItem->findChild<QQuickItem *>(QStringLiteral("navBar"));
+                    auto *picture = rootItem->findChild<QQuickItem *>(QStringLiteral("playerVideo"));
+                    check(idle && idle->property("interval").toInt() == 3000, "the player rests after three seconds");
+                    if (idle && controls && nav && picture) {
+                        idle->setProperty("interval", 400);
+                        const QPoint middle = picture->mapToScene(QPointF(picture->width() / 2, picture->height() / 3)).toPoint();
+                        QTest::mouseMove(window, middle);
+                        settle(200);
+                        check(!player->paused() && controls->opacity() > 0.9 && nav->opacity() > 0.9
+                                  && window->cursor().shape() != Qt::BlankCursor,
+                              "moving the pointer over the picture shows the controls, the navigation and the pointer");
+                        // The video keeps drawing frames while the pointer stands still.
+                        settle(1200);
+                        check(controls->opacity() < 0.01 && !controls->isVisible(), "the controls hide while the pointer rests");
+                        check(nav->opacity() < 0.01 && rootItem->property("playerResting").toBool(), "the navigation hides with them");
+                        check(window->cursor().shape() == Qt::BlankCursor, "so does the pointer");
+                        QTest::mouseMove(window, middle + QPoint(30, 10));
+                        settle(250);
+                        check(controls->opacity() > 0.9 && nav->opacity() > 0.9 && !rootItem->property("playerResting").toBool()
+                                  && window->cursor().shape() != Qt::BlankCursor,
+                              "a movement brings them all back");
+                        // Moving onto the hidden navigation brings it back too.
+                        settle(1200);
+                        QTest::mouseMove(window, nav->mapToScene(QPointF(nav->width() / 2, nav->height() / 2)).toPoint());
+                        settle(250);
+                        check(nav->opacity() > 0.9 && controls->opacity() > 0.9, "pointing at the hidden navigation brings it back");
+                        settle(1200);
+                        check(nav->opacity() > 0.9, "and it stays while the pointer is on it");
+                        QTest::mouseMove(window, middle);
+                        idle->setProperty("interval", 3000);
+                    }
+                }
+                {
                     // Full screen gives the whole window to the picture and gives it back.
                     auto *playerPage = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PlayerPage") && item->isVisible(); });
                     check(playerPage != nullptr, "the player page is on screen");
                     if (playerPage) {
                         QMetaObject::invokeMethod(playerPage, "toggleFull");
                         settle(600);
-                        check(window->visibility() == QWindow::FullScreen && rootItem->property("immersive").toBool(), "full screen hides the sidebar");
+                        check(window->visibility() == QWindow::FullScreen && rootItem->property("immersive").toBool(), "full screen hides the navigation");
                         QMetaObject::invokeMethod(playerPage, "toggleFull");
                         settle(600);
                         check(window->visibility() != QWindow::FullScreen && !rootItem->property("immersive").toBool(), "leaving full screen brings it back");
@@ -715,61 +1082,29 @@ int main(int argc, char **argv)
             }
             controller.closeDetail();
             settle(500);
-            check(!rootItem->property("rail").toBool(), "leaving it opens the sidebar again");
-
-            // Resting the pointer on the folded sidebar opens it over the content.
-            // Sent straight to the window: Windows would report the real pointer leaving at once.
-            auto pointerAt = [&](int x, int y) {
-                const QPointF at(x, y);
-                QMouseEvent move(QEvent::MouseMove, at, at, window->mapToGlobal(at), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-                QCoreApplication::sendEvent(window, &move);
-            };
-            auto *navItem = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("NavButton") && item->property("page").toInt() == 3; });
-            check(navItem != nullptr, "the sidebar has its navigation buttons");
-            if (navItem) {
-                const int pageBefore = controller.page();
-                navItem->forceActiveFocus();
-                QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-                QCoreApplication::sendEvent(navItem, &enter);
-                settle(120);
-                check(controller.page() == 3, "the keyboard can use the sidebar");
-                controller.selectPage(pageBefore);
-                settle(120);
-            }
-            const QPointF openAt = navItem ? navItem->mapToScene(QPointF(0, 0)) : QPointF();
-            rootItem->setProperty("railChosen", true);
-            settle(500);
-            check(rootItem->property("sidebarShown").toReal() < 70, "the folded sidebar is narrow");
-            check(navItem && navItem->mapToScene(QPointF(0, 0)) == openAt, "folding leaves the navigation buttons where they were");
-            // Repeated like a pointer that keeps reporting: the real one, wherever it is,
-            // can send the window events of its own while the test runs.
-            auto restAt = [&](int x, int y, const char *name, bool value) {
-                for (int waited = 0; waited < 1500 && rootItem->property(name).toBool() != value; waited += 50) {
-                    pointerAt(x, y);
-                    settle(50);
+            {
+                // The selection lens follows the page, and the keyboard can use the bar.
+                auto *navItem = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("NavButton") && item->property("page").toInt() == 3; });
+                auto *thumb = findItem(window->contentItem(), [](QQuickItem *item) { return item->objectName() == "navThumb"; });
+                check(navItem != nullptr && thumb != nullptr, "the navigation bar has its buttons");
+                if (navItem && thumb) {
+                    const int pageBefore = controller.page();
+                    navItem->forceActiveFocus();
+                    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+                    QCoreApplication::sendEvent(navItem, &enter);
+                    settle(600);
+                    check(controller.page() == 3, "the keyboard can use the navigation bar");
+                    check(qAbs(thumb->mapToScene(QPointF(0, 0)).x() - navItem->mapToScene(QPointF(0, 0)).x()) < 1 && qAbs(thumb->width() - navItem->width()) < 1,
+                          "the selection slides to the chosen page");
+                    controller.selectPage(pageBefore);
+                    window->contentItem()->forceActiveFocus();
+                    settle(600);
                 }
-                return rootItem->property(name).toBool() == value;
-            };
-            QPair<int, int> gridFolded;
+            }
             {
                 auto *grid = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PosterGrid") && item->isVisible(); });
-                check(grid != nullptr, "a poster grid is on screen for the motion checks");
+                check(grid != nullptr, "a poster grid is on screen for the size checks");
                 if (grid) {
-                    // The cards arrive at whole pixels without a step at the end.
-                    const auto travel = [&](bool folded) {
-                        rootItem->setProperty("railChosen", folded);
-                        qreal last = grid->property("cardWidth").toReal(), worstTail = 0;
-                        for (int waited = 0; waited < 700; waited += 4) {
-                            settle(4);
-                            const qreal now = grid->property("cardWidth").toReal(), reveal = rootItem->property("sidebarReveal").toReal();
-                            if (reveal > 0.98 || reveal < 0.02)
-                                worstTail = qMax(worstTail, qAbs(now - last));
-                            last = now;
-                        }
-                        return worstTail;
-                    };
-                    const qreal openTail = travel(false), foldTail = travel(true);
-                    check(openTail < 0.5 && foldTail < 0.5, "a sidebar motion ends without a step");
                     const qreal rest = grid->property("cardWidth").toReal();
                     check(qFuzzyCompare(rest, qRound(rest) + 0.0), "posters rest on whole pixels");
 
@@ -789,26 +1124,8 @@ int main(int argc, char **argv)
                     settle(600);
                 }
             }
-            check(restAt(30, 400, "peek", true), "the pointer opens a folded sidebar");
-            for (int waited = 0; waited < 500; waited += 50) {
-                pointerAt(30, 400);
-                settle(50);
-            }
-            check(rootItem->property("sidebarShown").toReal() > 200, "the sidebar opens fully");
-            check(rootItem->property("contentLeft").toReal() > 250, "the open sidebar pushes the content aside");
             {
-                // Same columns and same decoded covers either way, or the posters would jump.
-                auto *grid = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PosterGrid") && item->isVisible(); });
-                check(grid != nullptr, "a poster grid is on screen");
-                if (grid) {
-                    const int columnsOpen = grid->property("columns").toInt(), decodeOpen = grid->property("decodeWidth").toInt();
-                    gridFolded = {columnsOpen, decodeOpen};
-                }
-            }
-            check(rootItem->property("peek").toBool(), "the sidebar stays open under a resting pointer");
-            check(restAt(900, 400, "peek", false), "leaving folds it again");
-            {
-                // The headings of a detail page hold still while the sidebar passes.
+                // A detail page whose header gains a line keeps its heading where it is.
                 emit controller.home()->animeSelected(subject);
                 settle(600);
                 AnimeSubject arc = subject;
@@ -819,75 +1136,17 @@ int main(int argc, char **argv)
                 auto *heading = findItem(window->contentItem(), [](QQuickItem *item) { return item->property("text").toString() == QStringLiteral("可用资源") && item->isVisible(); });
                 auto *kinds = findItem(window->contentItem(), [](QQuickItem *item) { return item->property("tip").toString() == QStringLiteral("下载状态") && item->isVisible(); });
                 check(heading && kinds, "the detail page shows its headings");
-                QVector<ResourceResult> long_;
-                for (int i = 0; i < 12; ++i) {
-                    ResourceResult r;
-                    r.title = QStringLiteral("[第%1组] 测试 - %2 这是一条足够长的资源标题在侧栏展开时原本会折成两行显示用来确认").arg(i % 2).arg(i + 1);
-                    r.releaseGroup = QStringLiteral("第%1组").arg(i % 2);
-                    r.magnetUri = "magnet:?xt=urn:btih:" + QString::number(i + 1, 16).rightJustified(40, '0');
-                    long_.append(r);
-                }
-                emit aggregator.batchReady(long_);
-                emit aggregator.finished();
-                settle(700);
-                auto *detailPage = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("DetailPage"); });
-                auto *lastGroup = findItem(window->contentItem(), [](QQuickItem *item) { return item->property("text").toString().startsWith(QStringLiteral("第1组")) && item->isVisible(); });
-                if (!lastGroup)
-                    lastGroup = findItem(window->contentItem(), [](QQuickItem *item) { return item->property("text").toString().startsWith(QStringLiteral("第0组")) && item->isVisible(); });
-                check(detailPage && lastGroup, "the detail page lists its groups");
-                if (heading && kinds && detailPage && lastGroup) {
-                    const qreal headingY = heading->mapToScene(QPointF(0, 0)).y(), kindsY = kinds->mapToScene(QPointF(0, 0)).y();
-                    qreal headingShift = 0, kindsShift = 0, headingLag = 0;
-                    // Read as each frame is handed to the renderer: a shift that is put
-                    // right before the next event would not show up between frames.
-                    const auto frames = QObject::connect(window, &QQuickWindow::beforeSynchronizing, window, [&] {
-                        headingShift = qMax(headingShift, qAbs(heading->mapToScene(QPointF(0, 0)).y() - headingY));
-                        kindsShift = qMax(kindsShift, qAbs(kinds->mapToScene(QPointF(0, 0)).y() - kindsY));
-                        headingLag = qMax(headingLag, qAbs(heading->mapToScene(QPointF(0, 0)).x() - detailPage->property("listLeft").toReal()));
-                    }, Qt::DirectConnection);
-                    const auto follow = [&](int x, int ms) {
-                        for (int waited = 0; waited < ms; waited += 20) {
-                            pointerAt(x, 400);
-                            settle(20);
-                        }
-                    };
-                    for (int cycle = 0; cycle < 2; ++cycle) {
-                        follow(30, 800);
-                        follow(900, 900);
-                    }
-                    QObject::disconnect(frames);
-                    check(headingShift < 0.5, "passing over the sidebar leaves the page heading in place");
-                    check(kindsShift < 0.5, "passing over the sidebar does not rewrap the filters");
-                    {
-                        // Pushed text wraps to the room it has, the way it does in a narrower window.
-                        auto *title = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("BodyText") && item->property("text").toString().startsWith(QStringLiteral("[第0组]")) && item->isVisible(); });
-                        check(title != nullptr, "a release title is on screen");
-                        if (title) {
-                            const qreal foldedHeight = title->height();
-                            follow(30, 800);
-                            const qreal pushedHeight = title->height();
-                            const qreal right = title->mapToScene(QPointF(title->width(), 0)).x();
-                            const qreal listRight = detailPage->property("listLeft").toReal() + detailPage->property("listWidth").toReal();
-                            bool clipped = false;
-                            for (auto *up = title->parentItem(); up && up != window->contentItem(); up = up->parentItem())
-                                clipped = clipped || (up->clip() && !QByteArray(up->metaObject()->className()).contains("Loader") && up->width() < title->width());
-                            check(pushedHeight > foldedHeight + 4, "a pushed release title wraps onto another line");
-                            check(right < listRight - 100 && !clipped, "a pushed release title is not cut off");
-                            follow(900, 900);
-                        }
-                    }
-                    check(headingLag < 1.5, "the heading follows the content edge on every frame");
-
-                    // A header that really does gain a line keeps its top where it is, on every frame.
+                if (heading && kinds) {
+                    const qreal headingY = heading->mapToScene(QPointF(0, 0)).y();
                     qreal pushed = 0;
                     const auto wrapFrames = QObject::connect(window, &QQuickWindow::beforeSynchronizing, window, [&] {
                         pushed = qMax(pushed, qAbs(heading->mapToScene(QPointF(0, 0)).y() - headingY));
                     }, Qt::DirectConnection);
-                    auto *lastFilter = findItem(window->contentItem(), [](QQuickItem *item) { return item->property("tip").toString() == QStringLiteral("下载状态") && item->isVisible(); });
-                    const qreal lastFilterY = lastFilter ? lastFilter->mapToScene(QPointF(0, 0)).y() : 0;
-                    window->resize(1120, 860);
+                    const qreal lastFilterY = kinds->mapToScene(QPointF(0, 0)).y();
+                    // As wide as the list was beside a folded sidebar: still the two-column layout.
+                    window->resize(1052, 860);
                     settle(400);
-                    const qreal wrappedBy = lastFilter ? lastFilter->mapToScene(QPointF(0, 0)).y() - lastFilterY : 0;
+                    const qreal wrappedBy = kinds->mapToScene(QPointF(0, 0)).y() - lastFilterY;
                     window->resize(1320, 860);
                     settle(400);
                     QObject::disconnect(wrapFrames);
@@ -897,40 +1156,6 @@ int main(int argc, char **argv)
                 controller.closeDetail();
                 settle(500);
             }
-
-            // Frame by frame the content must stay clear of the sidebar, also when the
-            // pointer changes its mind halfway.
-            qreal worstGap = 1000;
-            const auto watch = [&](int ms) {
-                for (int waited = 0; waited < ms; waited += 8) {
-                    settle(8);
-                    const qreal contentLeft = rootItem->property("contentLeft").toReal();
-                    const qreal sidebarRight = 8 + rootItem->property("sidebarShown").toReal();
-                    worstGap = qMin(worstGap, contentLeft - sidebarRight);
-                }
-            };
-            settle(500);
-            rootItem->setProperty("peekWanted", true);
-            watch(500);
-            rootItem->setProperty("peekWanted", false);
-            watch(500);
-            rootItem->setProperty("peekWanted", true);
-            watch(150);
-            rootItem->setProperty("peekWanted", false);
-            watch(120);
-            rootItem->setProperty("peekWanted", true);
-            watch(500);
-            rootItem->setProperty("peekWanted", false);
-            watch(500);
-            check(worstGap >= 22, "the sidebar never reaches the content while it moves");
-            check(rootItem->property("sidebarShown").toReal() < 70, "quick changes of mind end folded");
-            {
-                auto *grid = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("PosterGrid") && item->isVisible(); });
-                check(grid && grid->property("columns").toInt() == gridFolded.first && grid->property("decodeWidth").toInt() == gridFolded.second,
-                      "opening the sidebar keeps the columns and the decoded covers");
-            }
-            rootItem->setProperty("railChosen", false);
-            settle(500);
         }
         auto *settingsPage = findItem(window->contentItem(), [](QQuickItem *item) { return QByteArray(item->metaObject()->className()).contains("SettingsPage"); });
         check(settingsPage != nullptr && !settingsPage->property("overview").toBool(), "settings show one section in a normal window");
@@ -980,6 +1205,7 @@ int main(int argc, char **argv)
         controller.search()->setSuggestions({});
     }
 
+#ifdef Q_OS_WIN
     {
         // The tray icon brings a hidden window back.
         window->hide();
@@ -989,6 +1215,7 @@ int main(int argc, char **argv)
         SendMessageW(tray, WM_APP + 41, 1, WM_LBUTTONUP);
         check(waitFor([&] { return window->isVisible(); }, 1000), "clicking the tray icon shows the window");
     }
+#endif
 
     check(g_warnings.isEmpty(), "no QML warnings anywhere");
     for (const auto &warning : g_warnings)

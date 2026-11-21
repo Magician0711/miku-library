@@ -60,6 +60,7 @@ void drawGlyph(QPainter &p, const QString &name, const QColor &color)
  else if(name=="filter"){ path.moveTo(4,5);path.lineTo(20,5);path.lineTo(14,12.5);path.lineTo(14,19);path.lineTo(10,17);path.lineTo(10,12.5);path.closeSubpath(); }
  else if(name=="import"){ path.moveTo(12,3.5);path.lineTo(12,14);path.moveTo(8,10);path.lineTo(12,14);path.lineTo(16,10);path.moveTo(5,13);path.lineTo(5,20);path.lineTo(19,20);path.lineTo(19,13); }
  else if(name=="export"){ path.moveTo(12,14);path.lineTo(12,3.5);path.moveTo(8,7.5);path.lineTo(12,3.5);path.lineTo(16,7.5);path.moveTo(5,13);path.lineTo(5,20);path.lineTo(19,20);path.lineTo(19,13); }
+ else if(name=="clock"){ p.drawEllipse(QRectF(3.5,3.5,17,17)); path.moveTo(12,7.5); path.lineTo(12,12); path.lineTo(15.5,14); }
  else if(name=="pulse"){ path.moveTo(3,12);path.lineTo(7,12);path.lineTo(10,5);path.lineTo(14,19);path.lineTo(17,12);path.lineTo(21,12); }
  else if(name=="sun"){ p.drawEllipse(QPointF(12,12),4,4); for(int i=0;i<8;++i){ const QLineF ray=QLineF::fromPolar(7,i*45.0).translated(12,12); p.drawLine(ray.p2(),QLineF::fromPolar(9.5,i*45.0).translated(12,12).p2()); } }
  else if(name=="moon"){ path.moveTo(19.5,14.5); path.cubicTo(18,18.5,14.5,20.5,11,20); path.cubicTo(6.5,19.5,3.5,15.5,4,11); path.cubicTo(4.5,7,7.5,4.2,11,3.8); path.cubicTo(8.8,6.5,8.8,11,11.3,13.6); path.cubicTo(13.6,16,17,16.4,19.5,14.5); }

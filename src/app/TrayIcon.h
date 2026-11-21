@@ -6,8 +6,12 @@
 #include <QObject>
 #include <QStringList>
 
-// The notification-area icon, on the Windows shell directly: QSystemTrayIcon would
-// bring Qt Widgets into the release for this one feature.
+class QMenu;
+class QSystemTrayIcon;
+
+// The notification-area icon. On Windows it talks to the shell directly: QSystemTrayIcon
+// would bring Qt Widgets into the release for this one feature. macOS (the menu bar) and
+// Linux (StatusNotifierItem) use QSystemTrayIcon, in TrayIcon_qt.cpp.
 class TrayIcon final : public QObject {
     Q_OBJECT
 public:
@@ -16,6 +20,8 @@ public:
     ~TrayIcon() override;
 
     void setToolTip(const QString &text);
+    // The menu is built each time it opens, so new entries take effect at once.
+    void setItems(const QStringList &items) { m_items = items; }
     void showMessage(const QString &title, const QString &text);
     void hide();
 
@@ -34,4 +40,6 @@ private:
     bool m_shown = false;
     unsigned m_taskbarCreated = 0;
     QStringList m_items;
+    QSystemTrayIcon *m_tray = nullptr;
+    QMenu *m_menu = nullptr;
 };

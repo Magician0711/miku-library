@@ -3,6 +3,8 @@
 
 #include "DialogHub.h"
 
+#include <QCoreApplication>
+
 #include <QCollator>
 #include <QFileInfo>
 
@@ -54,18 +56,18 @@ void DialogHub::ask(const QString &title, const QString &text, const QString &ac
 
 void DialogHub::confirmRemoval(Answer done)
 {
-    show({{"kind", "removal"}, {"title", QStringLiteral("移除下载任务")},
-          {"text", QStringLiteral("请选择是否保留已下载的文件。同时删除时，视频、种子文件和留空的文件夹都会被删除，无法撤销。")}},
+    show({{"kind", "removal"}, {"title", QCoreApplication::translate("Miku", "移除下载任务")},
+          {"text", QCoreApplication::translate("Miku", "请选择是否保留已下载的文件。同时删除时，视频、种子文件和留空的文件夹都会被删除，无法撤销。")}},
          std::move(done));
 }
 
 void DialogHub::askClose(int activeDownloads, Answer done)
 {
-    QString text = QStringLiteral("最小化到托盘后，下载和追更检查会在后台继续，点托盘图标即可回来。");
+    QString text = QCoreApplication::translate("Miku", "最小化到托盘后，下载和追更检查会在后台继续，点托盘图标即可回来。");
     if (activeDownloads > 0)
-        text = QStringLiteral("还有 %1 个任务正在下载。").arg(activeDownloads) + text
-               + QStringLiteral("退出软件会暂停这些下载，下次启动时继续。");
-    show({{"kind", "close"}, {"title", QStringLiteral("关闭 Miku Library")}, {"text", text}}, std::move(done));
+        text = QCoreApplication::translate("Miku", "还有 %1 个任务正在下载。").arg(activeDownloads) + text
+               + QCoreApplication::translate("Miku", "退出软件会暂停这些下载，下次启动时继续。");
+    show({{"kind", "close"}, {"title", QCoreApplication::translate("Miku", "关闭 Miku Library")}, {"text", text}}, std::move(done));
 }
 
 void DialogHub::chooseVideo(const QStringList &paths, std::function<void(const QString &)> done)
@@ -85,7 +87,7 @@ void DialogHub::chooseVideo(const QStringList &paths, std::function<void(const Q
     QVariantList videos;
     for (const auto &path : sorted)
         videos << QVariantMap{{"path", path}, {"name", QFileInfo(path).fileName()}};
-    show({{"kind", "video"}, {"title", QStringLiteral("选择要播放的视频")}, {"videos", videos}},
+    show({{"kind", "video"}, {"title", QCoreApplication::translate("Miku", "选择要播放的视频")}, {"videos", videos}},
          [done = std::move(done)](const QString &choice, bool) { if (!choice.isEmpty()) done(choice); });
 }
 

@@ -25,14 +25,14 @@ class SettingsController final : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(int section READ section WRITE setSection NOTIFY sectionChanged)
     Q_PROPERTY(QVariantList interfaces READ interfaces NOTIFY interfacesChanged)
-    Q_PROPERTY(QVariantList downloaderTypes READ downloaderTypes CONSTANT)
+    Q_PROPERTY(QVariantList downloaderTypes READ downloaderTypes NOTIFY textsChanged)
     Q_PROPERTY(QString cacheSize READ cacheSize NOTIFY cacheChanged)
     Q_PROPERTY(QString updateStatus READ updateStatus NOTIFY updateStatusChanged)
     Q_PROPERTY(bool checkingUpdate READ checkingUpdate NOTIFY updateStatusChanged)
     Q_PROPERTY(QString version READ version CONSTANT)
-    Q_PROPERTY(QStringList disclaimer READ disclaimer CONSTANT)
-    Q_PROPERTY(QString playerNote READ playerNote CONSTANT)
-    Q_PROPERTY(QString freeNote READ freeNote CONSTANT)
+    Q_PROPERTY(QStringList disclaimer READ disclaimer NOTIFY textsChanged)
+    Q_PROPERTY(QString playerNote READ playerNote NOTIFY textsChanged)
+    Q_PROPERTY(QString freeNote READ freeNote NOTIFY textsChanged)
 public:
     SettingsController(TorrentEngine *engine, AppConfig *config, ThemeController *theme, DialogHub *dialogs, QObject *parent = nullptr);
 
@@ -74,7 +74,11 @@ public:
     // Builds what the form would save; public for tests.
     EngineSettings engineFromForm() const;
 
+    // The interface language changed: texts made here are rebuilt.
+    void retranslate();
+
 signals:
+    void textsChanged();
     void formChanged();
     void dirtyChanged();
     void statusChanged();

@@ -1,9 +1,9 @@
-# Builds Miku Library on Windows and runs the smoke tests on every push.
+# Builds Miku Library on Windows, Linux and macOS and runs the smoke tests on every push.
 name: Build and test
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
   pull_request:
   workflow_dispatch:
 
@@ -15,6 +15,10 @@ jobs:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
     steps:
       - uses: actions/checkout@v4
+
+      # Every interface text has a translation, with its %1 placeholders intact.
+      - name: Check translations
+        run: python tools/i18n.py check
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -75,4 +79,151 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-test-logs
+          path: build/*.log
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu 24.04 has libtorrent 2.0.10 (22.04's 2.0.5 is too old) and mpv 0.37.
+      - name: Install libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libtorrent-rasterbar-dev libboost-dev libssl-dev libmpv-dev             libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4             libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 xvfb fonts-noto-cjk
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: linux_gcc_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # The interface suite needs a display and OpenGL: Xvfb with Mesa's software renderer.
+      - name: Smoke tests
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" bash tools/run_smoke.sh build
+
+      - name: Install tree
+        run: |
+          DESTDIR=$PWD/stage cmake --install build --prefix /usr
+          tar -C stage -czf miku-library-linux-x86_64.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miku-library-linux-x86_64
+          path: miku-library-linux-x86_64.tar.gz
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs-linux
+          path: build/*.log
+
+  # The release builds on macOS 14, the oldest system its Homebrew libraries then run on.
+  # MVTools is built for macOS 15, so motion interpolation is tested on a second runner.
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            release: true
+          - runner: macos-15
+            release: false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libraries
+        run: brew install ninja libtorrent-rasterbar mpv dylibbundler
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          cache: true
+
+      # The bundle icon, from the same 1024 px logo as everywhere else.
+      - name: App icon
+        run: |
+          mkdir -p AppIcon.iconset
+          for size in 16 32 128 256 512; do
+            sips -z $size $size assets/logo.png --out AppIcon.iconset/icon_${size}x${size}.png >/dev/null
+            sips -z $((size * 2)) $((size * 2)) assets/logo.png --out AppIcon.iconset/icon_${size}x${size}@2x.png >/dev/null
+          done
+          iconutil -c icns AppIcon.iconset -o assets/macos/AppIcon.icns
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$(brew --prefix)"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # Motion interpolation that needs nothing installed: a relocatable Python with
+      # VapourSynth and MVTools, every download pinned by its published hash. It goes beside
+      # the test programs here and into the bundle's Resources below.
+      - name: Motion interpolation set
+        run: |
+          set -euo pipefail
+          python_url='https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.13.18%2B20261110-aarch64-apple-darwin-install_only_stripped.tar.gz'
+          curl -sfL -o "$RUNNER_TEMP/python.tar.gz" "$python_url"
+          echo "7a2384641584ab9984221fcb0fc9265df465922af71be71410529e2a9c3f0540  $RUNNER_TEMP/python.tar.gz" | shasum -a 256 -c
+          rm -rf build/vapoursynth && mkdir -p build/vapoursynth
+          tar -xzf "$RUNNER_TEMP/python.tar.gz" -C build/vapoursynth
+          root="$PWD/build/vapoursynth/python"
+          echo 'vapoursynth==82 --hash=sha256:e6f0854e7de85b42426cb0889066c712455b6f1afde8d7328addfb2320bc3e80' > "$RUNNER_TEMP/requirements.txt"
+          echo 'vapoursynth-mvtools==29 --hash=sha256:c081fb4b367ebd44f2b56cf38e43ff146dd5f31ec31dacbf6cd8bf6560aa2478' >> "$RUNNER_TEMP/requirements.txt"
+          "$root/bin/python3" -m pip install -q --no-deps --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/requirements.txt"
+          # Only what playback needs: no pip, tests, Tk, headers or cached bytecode.
+          cd "$root"
+          rm -rf include share bin/pip* bin/idle* bin/pydoc* bin/2to3* bin/vspipe bin/vapoursynth
+          rm -rf lib/libtcl* lib/libtk* lib/tcl* lib/tk* lib/itcl* lib/thread*
+          rm -rf lib/python3.13/test lib/python3.13/idlelib lib/python3.13/tkinter lib/python3.13/turtledemo
+          rm -rf lib/python3.13/ensurepip lib/python3.13/pydoc_data lib/python3.13/lib-dynload/_tkinter*
+          rm -rf lib/python3.13/site-packages/pip lib/python3.13/site-packages/pip-*
+          rm -rf lib/python3.13/site-packages/vapoursynth/include lib/python3.13/site-packages/vapoursynth/pkgconfig
+          find . -name __pycache__ -type d -prune -exec rm -rf {} +
+          "$root/bin/python3" -I -c 'from vapoursynth import core; assert hasattr(core, "mv")' || [ "${{ matrix.release }}" = true ]
+          echo "Motion interpolation set: $(du -sh "$root/.." | cut -f1)"
+
+      - name: Smoke tests
+        run: bash tools/run_smoke.sh build
+
+      # Qt and libtorrent go in by macdeployqt; libmpv is loaded at run time, so it and
+      # everything it needs are copied in separately.
+      - name: Bundle
+        if: matrix.release
+        run: |
+          app="build/Miku Library.app"
+          mkdir -p "$app/Contents/Frameworks"
+          cp "$(brew --prefix)/lib/libmpv.2.dylib" "$app/Contents/Frameworks/"
+          chmod u+w "$app/Contents/Frameworks/libmpv.2.dylib"
+          dylibbundler -of -b -x "$app/Contents/Frameworks/libmpv.2.dylib" -d "$app/Contents/Frameworks" -p @executable_path/../Frameworks/
+          "$QT_ROOT_DIR/bin/macdeployqt" "$app" -qmldir=qml -always-overwrite
+          ditto build/vapoursynth "$app/Contents/Resources/vapoursynth"
+          ditto -c -k --keepParent "$app" MikuLibrary-macOS-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.release
+        with:
+          name: miku-library-macos-arm64
+          path: MikuLibrary-macOS-arm64.zip
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs-${{ matrix.runner }}
           path: build/*.log

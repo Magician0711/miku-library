@@ -50,8 +50,8 @@ NxDialog {
     NxCheck {
         id: remember
         visible: host.shownKind === "removal" || host.shownKind === "close"
-        text: host.shownKind === "removal" ? "记住我的选择（可在「偏好设置 → 下载」中修改）"
-                                           : "记住我的选择（可在「偏好设置 → 通用」中修改）"
+        text: host.shownKind === "removal" ? qsTr("记住我的选择（可在「偏好设置 → 下载」中修改）")
+                                           : qsTr("记住我的选择（可在「偏好设置 → 通用」中修改）")
     }
     Rectangle {
         visible: host.shownKind === "video"
@@ -96,14 +96,14 @@ NxDialog {
         height: 32
         NxButton {
             visible: host.shownKind === "removal"
-            text: "取消"
+            text: qsTr("取消")
             onClicked: App.dialogs.answer("cancel")
         }
         Row {
             anchors.right: parent.right
             spacing: 8
             // message
-            NxButton { visible: host.shownKind === "message"; kind: "primary"; text: "知道了"; onClicked: App.dialogs.answer("") }
+            NxButton { visible: host.shownKind === "message"; kind: "primary"; text: qsTr("知道了"); onClicked: App.dialogs.answer("") }
             // ask
             NxButton {
                 visible: host.shownKind === "ask"
@@ -117,17 +117,17 @@ NxDialog {
                 onClicked: App.dialogs.answer(host.shownSpec.rejectIsDefault ? "reject" : "accept")
             }
             // removal
-            NxButton { visible: host.shownKind === "removal"; kind: "danger"; text: "同时删除文件"; onClicked: App.dialogs.answer("delete", remember.checked) }
-            NxButton { visible: host.shownKind === "removal"; kind: "primary"; text: "仅移除任务"; onClicked: App.dialogs.answer("keep", remember.checked) }
+            NxButton { visible: host.shownKind === "removal"; kind: "danger"; text: qsTr("同时删除文件"); onClicked: App.dialogs.answer("delete", remember.checked) }
+            NxButton { visible: host.shownKind === "removal"; kind: "primary"; text: qsTr("仅移除任务"); onClicked: App.dialogs.answer("keep", remember.checked) }
             // close
-            NxButton { visible: host.shownKind === "close"; text: "退出软件"; onClicked: App.dialogs.answer("quit", remember.checked) }
-            NxButton { visible: host.shownKind === "close"; kind: "primary"; text: "最小化到托盘"; onClicked: App.dialogs.answer("tray", remember.checked) }
+            NxButton { visible: host.shownKind === "close"; text: qsTr("退出软件"); onClicked: App.dialogs.answer("quit", remember.checked) }
+            NxButton { visible: host.shownKind === "close"; kind: "primary"; text: qsTr("最小化到托盘"); onClicked: App.dialogs.answer("tray", remember.checked) }
             // video
-            NxButton { visible: host.shownKind === "video"; text: "取消"; onClicked: App.dialogs.answer("") }
+            NxButton { visible: host.shownKind === "video"; text: qsTr("取消"); onClicked: App.dialogs.answer("") }
             NxButton {
                 visible: host.shownKind === "video"
                 kind: "primary"
-                text: "播放"
+                text: qsTr("播放")
                 onClicked: App.dialogs.answer(host.shownSpec.videos[videoList.currentIndex].path)
             }
         }

@@ -8,7 +8,11 @@ PROJECT=Path(__file__).resolve().parents[1]
 OUT=PROJECT.parent/'release_packages'
 OUT.mkdir(exist_ok=True)
 now=datetime.datetime.now(datetime.timezone.utc).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
-NAME='MikuLibrary-Windows-x64-Portable-'+now.strftime('%Y%m%d-%H%M%S')
+import re
+VERSION=re.search(r'project\(MikuLibrary VERSION ([0-9.]+)',(PROJECT/'CMakeLists.txt').read_text(encoding='utf-8')).group(1)
+NAME='MikuLibrary-'+VERSION+'-Windows-x64-Portable-'+now.strftime('%Y%m%d-%H%M%S')
+# The deployed program to package; dist/MikuLibrary unless MIKU_DIST names another folder.
+DIST=Path(os.environ.get('MIKU_DIST',PROJECT/'dist/MikuLibrary'))
 STAGE=OUT/NAME/'MikuLibrary'
 ARCHIVE=OUT/(NAME+'.zip')
 VERIFY=OUT/(NAME+'-verification')
@@ -26,9 +30,12 @@ def digest(path):
     with path.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
 
 # Keep a clean distributable, with only the current executable and usable plugins.
-for file in (PROJECT/'dist/MikuLibrary').rglob('*'):
+for file in DIST.rglob('*'):
     if not file.is_file():continue
-    rel=file.relative_to(PROJECT/'dist/MikuLibrary')
+    rel=file.relative_to(DIST)
+    # Motion interpolation's VapourSynth, MVTools and embedded Python ship whole: the
+    # interpreter needs its .pyd modules, python313.zip and the ._pth file as they are.
+    if rel.parts[0]=='vapoursynth':copy(file,STAGE/rel);continue
     # QML modules are located through their qmldir files.
     if file.suffix.lower() not in ('.dll','.json','.qml','.glsl') and file.name!='qmldir' and rel.as_posix()!='MikuLibrary.exe':continue
     if rel.parts[0]=='sqldrivers' and file.name!='qsqlite.dll':continue
@@ -52,8 +59,8 @@ for package in (OLD/'licenses').iterdir():
     if package.is_dir() and package.name not in {'DB-IP','NaturalEarth','libmaxminddb','DirectXShaderCompiler'}:
         shutil.copytree(package,STAGE/'licenses'/package.name)
 write(STAGE/'licenses/Microsoft/NOTICE.txt','Microsoft Visual C++ Runtime (x64)\nApp-local runtime DLLs are included beside MikuLibrary.exe.\nOriginal Microsoft redistribution terms apply.\nhttps://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files\n')
-write(STAGE/'THIRD_PARTY_NOTICES.txt','libmpv (mpv 0.42 development build by shinchiro/mpv-winbuild-cmake, GPL; sources: github.com/mpv-player/mpv and github.com/shinchiro/mpv-winbuild-cmake) and Anime4K shaders (MIT) power the built-in player. Qt 6.8.3 (including Concurrent), libtorrent 2.1.2, OpenSSL, Boost and their runtime dependencies are bundled as dynamically linked libraries. Original third-party licenses and Qt SPDX notices are in licenses/. Corresponding application source is in Source/.\n')
-write(STAGE/'使用说明.txt','''Miku Library · Windows x64 便携版
+write(STAGE/'THIRD_PARTY_NOTICES.txt','libmpv (mpv 0.42 development build by shinchiro/mpv-winbuild-cmake, GPL; sources: github.com/mpv-player/mpv and github.com/shinchiro/mpv-winbuild-cmake) and Anime4K shaders (MIT) power the built-in player. Motion interpolation uses the bundled VapourSynth R82 (LGPL-2.1-or-later; source: github.com/vapoursynth/vapoursynth), MVTools v29 (GPL-2.0; source: github.com/dubhater/vapoursynth-mvtools) and the embeddable Python 3.13.15 (PSF License; source: python.org), unmodified, in vapoursynth/. Qt 6.8.3 (including Concurrent), libtorrent 2.1.2, OpenSSL, Boost and their runtime dependencies are bundled as dynamically linked libraries. Original third-party licenses and Qt SPDX notices are in licenses/. Corresponding application source is in Source/.\n')
+write(STAGE/'使用说明.txt',f'''Miku Library {VERSION} · Windows x64 便携版
 
 1. 将压缩包完整解压到任意文件夹。
 2. 双击同目录 MikuLibrary.exe，首次运行会自动建立下载目录。
@@ -64,7 +71,7 @@ write(STAGE/'使用说明.txt','''Miku Library · Windows x64 便携版
 默认使用内置下载器；上传总限速 1024 KiB/s，其余速率和任务数量不限。
 默认下载完成后继续做种，可在设置中关闭。
 
-可在侧栏底部、下载任务页或设置中切换到已安装的外部下载器。
+可在下载任务页或设置中切换到已安装的外部下载器。
 外部软件需自行安装；内置下载器可以直接使用。
 搜索、封面和资源检索需要网络。
 
@@ -76,6 +83,7 @@ Source/ 为对应源码和构建说明，日常运行不需要打开该目录。
 # Audit normal and delay-load imports. VC runtime imports must be bundled,
 # even if this build machine already has a global redistributable installed.
 from pe_imports import imported_dlls as imports
+def rel_parts(file):return file.relative_to(STAGE).parts
 system=Path(os.environ.get('SystemRoot',r'C:\Windows'))/'System32'
 root_dlls={p.name.lower():p for p in STAGE.glob('*.dll')}
 missing=set();binaries=[]
@@ -85,6 +93,8 @@ for file in STAGE.rglob('*'):
     for name in imports(file):
         if name in root_dlls:resolutions[name]='bundled-root'
         elif (file.parent/name).is_file():resolutions[name]='bundled-neighbor'
+        # VapourSynth's modules load the embedded Python at the top of vapoursynth/.
+        elif rel_parts(file)[0]=='vapoursynth' and (STAGE/'vapoursynth'/name).is_file():resolutions[name]='bundled-python'
         elif name.startswith(('api-ms-','ext-ms-')):resolutions[name]='windows-api-set'
         elif name.startswith(('msvcp','vcruntime','concrt','vccorlib')):
             resolutions[name]='MISSING';missing.add(name)

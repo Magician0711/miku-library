@@ -24,6 +24,8 @@ public:
     ~ImageLoader() override;
 
     void request(const QString &url, std::function<void(QImage)> callback);
+    // A downloaded cover as the poster size it is cached at; null when it cannot be read.
+    static QImage decodeCover(const QByteArray &data);
 
 private:
     void download(const QString &url);

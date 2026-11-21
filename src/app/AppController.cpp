@@ -47,9 +47,20 @@
 #include <libtorrent/torrent_info.hpp>
 
 namespace {
-const QStringList kPageNames = {QStringLiteral("本季放送"), QStringLiteral("搜索番剧"), QStringLiteral("我的追番"),
-                                QStringLiteral("下载任务"), QStringLiteral("资源站点"), QStringLiteral("偏好设置"),
-                                QStringLiteral("番剧详情"), QStringLiteral("正在播放")};
+QStringList trayItems()
+{
+    return {QCoreApplication::translate("Miku", "打开 Miku Library"), QCoreApplication::translate("Miku", "检查追更"), QString(), QCoreApplication::translate("Miku", "退出")};
+}
+
+QString detailTitle(const QString &name) { return QCoreApplication::translate("Miku", "番剧详情 · %1").arg(name); }
+
+// Built when asked, so they follow the interface language.
+QStringList pageNames()
+{
+    return {QCoreApplication::translate("Miku", "本季放送"), QCoreApplication::translate("Miku", "搜索番剧"), QCoreApplication::translate("Miku", "我的追番"),
+                                QCoreApplication::translate("Miku", "下载任务"), QCoreApplication::translate("Miku", "资源站点"), QCoreApplication::translate("Miku", "偏好设置"),
+                                QCoreApplication::translate("Miku", "番剧详情"), QCoreApplication::translate("Miku", "正在播放")};
+}
 
 // Display name of a magnet link or local .torrent handed over on the command line.
 QString importedTitle(const QString &input)
@@ -68,7 +79,7 @@ AppController::AppController(Catalog *catalog, Database *db, AppConfig *config, 
                              SearchAggregator *aggregator, BangumiClient *bangumi, ThemeController *theme, WindowChrome *chrome,
                              QObject *parent)
     : QObject(parent), m_catalog(catalog), m_db(db), m_config(config), m_http(http), m_engine(engine),
-      m_aggregator(aggregator), m_bangumi(bangumi), m_theme(theme), m_chrome(chrome), m_contextTitle(kPageNames.first())
+      m_aggregator(aggregator), m_bangumi(bangumi), m_theme(theme), m_chrome(chrome), m_contextTitle(pageNames().first())
 {
     for (const int id : m_db->followedIds())
         m_following.insert(id);
@@ -90,7 +101,7 @@ AppController::AppController(Catalog *catalog, Database *db, AppConfig *config, 
     qmlRegisterType<MpvVideoItem>("MikuLibrary.Native", 1, 0, "MpvVideo");
     m_player = new PlayerController(this);
     connect(m_player, &PlayerController::failed, this, [this](const QString &message) {
-        m_dialogs->message(QStringLiteral("无法播放"), message, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "无法播放"), message, QStringLiteral("warning"));
     });
     wire();
     wireSettings();
@@ -100,7 +111,7 @@ AppController::AppController(Catalog *catalog, Database *db, AppConfig *config, 
     connect(m_periodicCheck, &QTimer::timeout, this, [this] { checkForNewEpisodes(false); });
     applyGeneralSettings();
     if (!libraryError.isEmpty())
-        m_dialogs->message(QStringLiteral("本地记录读取失败"), libraryError, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "本地记录读取失败"), libraryError, QStringLiteral("warning"));
     QTimer::singleShot(0, this, [this] { m_animeDownloads->adoptCachedSubjects(m_db->cachedSubjects()); });
     updateStatus();
     // Check followed release groups once per launch, after the first screen has settled.
@@ -120,17 +131,17 @@ void AppController::wire()
     connect(m_animeDownloads, &AnimeDownloads::queued, this, [this] { if (!m_autoQueuing) selectPage(kDownloadsPage); });
     connect(m_animeDownloads, &AnimeDownloads::information, this, [this](const QString &text) {
         if (m_autoQueuing) {
-            notify(QStringLiteral("自动下载"), text, kDownloadsPage);
+            notify(QCoreApplication::translate("Miku", "自动下载"), text, kDownloadsPage);
             return;
         }
-        m_dialogs->message(QStringLiteral("下载提示"), text);
+        m_dialogs->message(QCoreApplication::translate("Miku", "下载提示"), text);
     });
     connect(m_animeDownloads, &AnimeDownloads::error, this, [this](const QString &text) {
         if (m_autoQueuing || !m_window || !m_window->isVisible()) {
-            notify(QStringLiteral("下载失败"), text, kDownloadsPage);
+            notify(QCoreApplication::translate("Miku", "下载失败"), text, kDownloadsPage);
             return;
         }
-        m_dialogs->message(QStringLiteral("下载失败"), text, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "下载失败"), text, QStringLiteral("warning"));
     });
     // Finished downloads arrive in bursts (a batch, several episodes); one notice per burst.
     m_finishedTimer = new QTimer(this);
@@ -141,20 +152,20 @@ void AppController::wire()
         if (names.isEmpty())
             return;
         const QString text = names.size() <= 3 ? names.join(QLatin1Char('\n'))
-            : names.mid(0, 2).join(QLatin1Char('\n')) + QStringLiteral("\n等 %1 个下载").arg(names.size());
-        notify(QStringLiteral("下载完成"), text, kLibraryPage);
+            : names.mid(0, 2).join(QLatin1Char('\n')) + QCoreApplication::translate("Miku", "\n等 %1 个下载").arg(names.size());
+        notify(QCoreApplication::translate("Miku", "下载完成"), text, kLibraryPage);
     });
     connect(m_localLibrary, &LocalLibrary::downloadCompleted, this, [this](const LibraryItem &item) {
         if (!m_config->notifyDownloads)
             return;
         const QString episodes = item.episodes.isEmpty() ? QString()
-            : item.episodes.size() == 1 ? QStringLiteral(" 第 %1 话").arg(item.episodes.first())
-            : QStringLiteral(" 第 %1–%2 话").arg(item.episodes.first(), item.episodes.last());
+            : item.episodes.size() == 1 ? QCoreApplication::translate("Miku", " 第 %1 话").arg(item.episodes.first())
+            : QCoreApplication::translate("Miku", " 第 %1–%2 话").arg(item.episodes.first(), item.episodes.last());
         m_finished << item.subject.displayName() + episodes;
         m_finishedTimer->start();
     });
     connect(m_engine, &TorrentEngine::engineError, this, [this](const QString &message) {
-        m_dialogs->message(QStringLiteral("下载任务异常"), message, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "下载任务异常"), message, QStringLiteral("warning"));
     });
 
     connect(m_home, &BrowseController::animeSelected, this, [this](const AnimeSubject &s) { openAnime(s); });
@@ -178,24 +189,18 @@ void AppController::wire()
     connect(m_detail, &DetailController::playRequested, this, [this](const AnimeSubject &subject, const ResourceResult &resource) {
         const QStringList files = m_localLibrary->playableFiles(subject.bangumiId, resource);
         if (files.isEmpty()) {
-            m_dialogs->message(QStringLiteral("视频不可用"), QStringLiteral("本地视频已移动、删除或尚未下载完成。"), QStringLiteral("warning"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "视频不可用"), QCoreApplication::translate("Miku", "本地视频已移动、删除或尚未下载完成。"), QStringLiteral("warning"));
             return;
         }
-        m_dialogs->chooseVideo(files, [this, subject](const QString &file) {
-            if (m_player->open(file, subject.displayName(), QFileInfo(file).completeBaseName())) {
-                selectPage(kPlayerPage);
-                return;
-            }
-            if (!QDesktopServices::openUrl(QUrl::fromLocalFile(file)))
-                m_dialogs->message(QStringLiteral("无法播放"), QStringLiteral("请为此视频格式设置默认播放器。"), QStringLiteral("warning"));
-        });
+        playFiles(files, subject.displayName());
     });
+    connect(m_downloads, &DownloadsController::playRequested, this, &AppController::playFiles);
 
     connect(m_sites, &SitesController::importRequested, this, &AppController::importCatalog);
     connect(m_sites, &SitesController::exportRequested, this, &AppController::exportCatalog);
 
     connect(m_appUpdate, &AppUpdate::available, this, [this](const QString &version, const QUrl &page) {
-        m_newVersion = QStringLiteral("新版本 %1").arg(version);
+        m_newVersion = QCoreApplication::translate("Miku", "新版本 %1").arg(version);
         m_newVersionPage = page;
         emit newVersionChanged();
     });
@@ -220,31 +225,31 @@ void AppController::wireSettings()
     });
     connect(m_settings, &SettingsController::checkAppUpdateRequested, m_appUpdate, &AppUpdate::check);
     connect(m_settings, &SettingsController::exportBackupRequested, this, [this] {
-        const QString name = QStringLiteral("MikuLibrary-备份-%1.json").arg(QDate::currentDate().toString(QStringLiteral("yyyyMMdd")));
-        const QString path = NativeDialogs::saveJson(m_window, QStringLiteral("导出备份"),
+        const QString name = QCoreApplication::translate("Miku", "MikuLibrary-备份-%1.json").arg(QDate::currentDate().toString(QStringLiteral("yyyyMMdd")));
+        const QString path = NativeDialogs::saveJson(m_window, QCoreApplication::translate("Miku", "导出备份"),
             QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(name));
         if (path.isEmpty())
             return;
         const auto backup = Backup::create(AppConfig::dataDir(), m_db->followedIds());
         QString error;
         if (Backup::save(backup, path, &error))
-            m_dialogs->message(QStringLiteral("备份已导出"), Backup::summary(backup) + QStringLiteral("\n") + QDir::toNativeSeparators(path));
+            m_dialogs->message(QCoreApplication::translate("Miku", "备份已导出"), Backup::summary(backup) + QStringLiteral("\n") + QDir::toNativeSeparators(path));
         else
-            m_dialogs->message(QStringLiteral("导出失败"), error, QStringLiteral("error"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "导出失败"), error, QStringLiteral("error"));
     });
     connect(m_settings, &SettingsController::importBackupRequested, this, [this] {
-        const QString path = NativeDialogs::openJson(m_window, QStringLiteral("导入备份"));
+        const QString path = NativeDialogs::openJson(m_window, QCoreApplication::translate("Miku", "导入备份"));
         if (path.isEmpty())
             return;
         QJsonObject backup;
         QString error;
         if (!Backup::load(path, &backup, &error)) {
-            m_dialogs->message(QStringLiteral("无法导入"), error, QStringLiteral("warning"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "无法导入"), error, QStringLiteral("warning"));
             return;
         }
         const QString text = Backup::summary(backup)
-            + QStringLiteral("\n\n导入后将替换当前的设置、资源站点、下载记录和追番列表。软件会关闭并自动重新打开，进行中的下载会在重新打开后继续。");
-        m_dialogs->ask(QStringLiteral("导入备份？"), text, QStringLiteral("导入并重启"), QStringLiteral("取消"), [this, backup](bool yes) {
+            + QCoreApplication::translate("Miku", "\n\n导入后将替换当前的设置、资源站点、下载记录和追番列表。软件会关闭并自动重新打开，进行中的下载会在重新打开后继续。");
+        m_dialogs->ask(QCoreApplication::translate("Miku", "导入备份？"), text, QCoreApplication::translate("Miku", "导入并重启"), QCoreApplication::translate("Miku", "取消"), [this, backup](bool yes) {
             if (!yes)
                 return;
             // Written after the app has stopped, so nothing still running can overwrite it.
@@ -256,30 +261,30 @@ void AppController::wireSettings()
         const auto plan = m_animeDownloads->planMove(from);
         if (plan.items == 0)
             return;
-        QString text = (plan.anime > 0 ? QStringLiteral("原下载目录中还有 %1 部番剧的 %2 个下载").arg(plan.anime).arg(plan.items)
-                                       : QStringLiteral("原下载目录中还有 %1 个下载").arg(plan.items))
-            + QStringLiteral("。要一起移到新目录吗？正在下载的任务会在新位置继续。");
+        QString text = (plan.anime > 0 ? QCoreApplication::translate("Miku", "原下载目录中还有 %1 部番剧的 %2 个下载").arg(plan.anime).arg(plan.items)
+                                       : QCoreApplication::translate("Miku", "原下载目录中还有 %1 个下载").arg(plan.items))
+            + QCoreApplication::translate("Miku", "。要一起移到新目录吗？正在下载的任务会在新位置继续。");
         if (plan.external > 0)
-            text += QStringLiteral("\n\n另有 %1 个由外部下载器处理的任务不会移动，请在对应软件中自行处理。").arg(plan.external);
-        m_dialogs->ask(QStringLiteral("移动已下载的番剧？"), text, QStringLiteral("一起移动"), QStringLiteral("留在原处"), [this, from, to](bool yes) {
+            text += QCoreApplication::translate("Miku", "\n\n另有 %1 个由外部下载器处理的任务不会移动，请在对应软件中自行处理。").arg(plan.external);
+        m_dialogs->ask(QCoreApplication::translate("Miku", "移动已下载的番剧？"), text, QCoreApplication::translate("Miku", "一起移动"), QCoreApplication::translate("Miku", "留在原处"), [this, from, to](bool yes) {
             if (yes)
                 m_animeDownloads->moveDownloads(from, to);
         });
     });
     connect(m_animeDownloads, &AnimeDownloads::moveFinished, this, [this](int moved, const QStringList &errors) {
         if (errors.isEmpty()) {
-            m_dialogs->message(QStringLiteral("移动完成"), QStringLiteral("已把 %1 个下载移到新目录。").arg(moved));
+            m_dialogs->message(QCoreApplication::translate("Miku", "移动完成"), QCoreApplication::translate("Miku", "已把 %1 个下载移到新目录。").arg(moved));
             return;
         }
-        m_dialogs->message(QStringLiteral("部分内容未能移动"),
-            QStringLiteral("已移动 %1 个下载，以下内容仍在原目录：\n%2").arg(moved).arg(errors.mid(0, 8).join(QLatin1Char('\n'))),
+        m_dialogs->message(QCoreApplication::translate("Miku", "部分内容未能移动"),
+            QCoreApplication::translate("Miku", "已移动 %1 个下载，以下内容仍在原目录：\n%2").arg(moved).arg(errors.mid(0, 8).join(QLatin1Char('\n'))),
             QStringLiteral("warning"));
     });
 }
 
 void AppController::buildTray()
 {
-    m_tray = new TrayIcon({QStringLiteral("打开 Miku Library"), QStringLiteral("检查追更"), QString(), QStringLiteral("退出")}, this);
+    m_tray = new TrayIcon(trayItems(), this);
     connect(m_tray, &TrayIcon::activated, this, &AppController::showWindow);
     connect(m_tray, &TrayIcon::menuTriggered, this, [this](int index) {
         if (index == 0) showWindow();
@@ -330,7 +335,7 @@ void AppController::requestClose()
         if (action == QStringLiteral("tray")) {
             m_window->hide();
             if (!std::exchange(m_trayHintShown, true))
-                notify(QStringLiteral("Miku Library 仍在运行"), QStringLiteral("下载和追更检查会在后台继续。点击托盘图标打开窗口，右键可以退出。"));
+                notify(QCoreApplication::translate("Miku", "Miku Library 仍在运行"), QCoreApplication::translate("Miku", "下载和追更检查会在后台继续。点击托盘图标打开窗口，右键可以退出。"));
             return;
         }
         quitApp();
@@ -394,7 +399,7 @@ QString AppController::noticeSummary() const
     int episodes = 0;
     for (const auto &notice : m_notices)
         episodes += notice.episodes.size();
-    return QStringLiteral("%1 部番剧 · 共 %2 集").arg(m_notices.size()).arg(episodes);
+    return QCoreApplication::translate("Miku", "%1 部番剧 · 共 %2 集").arg(m_notices.size()).arg(episodes);
 }
 
 void AppController::downloadNotice(int subjectId)
@@ -444,14 +449,14 @@ void AppController::checkForNewEpisodes(bool manual)
                 m_autoQueuing = true;
                 m_animeDownloads->downloadGroup(notice.target.subject, notice.candidates, {notice.target.after + 1, 0});
                 m_autoQueuing = false;
-                notify(QStringLiteral("已自动下载新集"), what, kDownloadsPage);
+                notify(QCoreApplication::translate("Miku", "已自动下载新集"), what, kDownloadsPage);
                 return;
             }
             addNotice(notice);
             if (m_manualCheck)
                 m_manualFound.append(notice);
             if (!m_window || !m_window->isVisible() || m_window->visibility() == QWindow::Minimized)
-                notify(QStringLiteral("追番有新集"), what);
+                notify(QCoreApplication::translate("Miku", "追番有新集"), what);
         });
         connect(m_updateChecker, &UpdateChecker::finished, this, [this](int checked, int withUpdates) {
             qInfo().noquote() << QStringLiteral("update check: %1 anime checked, %2 with new episodes").arg(checked).arg(withUpdates);
@@ -459,12 +464,12 @@ void AppController::checkForNewEpisodes(bool manual)
                 return;
             m_library->setChecking(false);
             const auto found = std::exchange(m_manualFound, {});
-            const QString quiet = checked == 0 ? QStringLiteral("还没有可追更的番剧：先用某个字幕组下载一集，之后就会检查它的新集")
-                : withUpdates == 0 ? QStringLiteral("已检查 %1 部番剧，暂无新集").arg(checked)
-                : QStringLiteral("%1 部番剧的新集已自动开始下载").arg(withUpdates);
+            const QString quiet = checked == 0 ? QCoreApplication::translate("Miku", "还没有可追更的番剧：先用某个字幕组下载一集，之后就会检查它的新集")
+                : withUpdates == 0 ? QCoreApplication::translate("Miku", "已检查 %1 部番剧，暂无新集").arg(checked)
+                : QCoreApplication::translate("Miku", "%1 部番剧的新集已自动开始下载").arg(withUpdates);
             if (!m_window || !m_window->isVisible() || m_window->visibility() == QWindow::Minimized) {   // started from the tray menu
                 if (found.isEmpty())
-                    notify(QStringLiteral("追更检查"), quiet);
+                    notify(QCoreApplication::translate("Miku", "追更检查"), quiet);
                 return;
             }
             if (found.isEmpty()) {
@@ -475,10 +480,10 @@ void AppController::checkForNewEpisodes(bool manual)
             for (int i = 0; i < found.size() && i < 5; ++i)
                 lines << QStringLiteral("· %1  %2").arg(found.at(i).target.subject.displayName(), Format::episodeSummary(found.at(i).episodes));
             if (found.size() > 5)
-                lines << QStringLiteral("· 等 %1 部").arg(found.size());
-            const QString text = QStringLiteral("%1 部番剧有新集：\n%2\n\n现在按上次的字幕组和清晰度下载吗？选「稍后」可在右下角的提示中逐部处理。")
+                lines << QCoreApplication::translate("Miku", "· 等 %1 部").arg(found.size());
+            const QString text = QCoreApplication::translate("Miku", "%1 部番剧有新集：\n%2\n\n现在按上次的字幕组和清晰度下载吗？选「稍后」可在右下角的提示中逐部处理。")
                 .arg(found.size()).arg(lines.join(QLatin1Char('\n')));
-            m_dialogs->ask(QStringLiteral("发现新集"), text, QStringLiteral("全部下载"), QStringLiteral("稍后"), [this, found](bool yes) {
+            m_dialogs->ask(QCoreApplication::translate("Miku", "发现新集"), text, QCoreApplication::translate("Miku", "全部下载"), QCoreApplication::translate("Miku", "稍后"), [this, found](bool yes) {
                 if (!yes)
                     return;
                 for (const auto &notice : found)
@@ -496,7 +501,7 @@ void AppController::checkForNewEpisodes(bool manual)
 
 QString AppController::engineName() const
 {
-    return m_config->downloader.selected == "builtin" ? QStringLiteral("内置下载器") : DownloaderSettings::name(m_config->downloader.selected);
+    return m_config->downloader.selected == "builtin" ? QCoreApplication::translate("Miku", "内置下载器") : DownloaderSettings::name(m_config->downloader.selected);
 }
 
 void AppController::updateStatus()
@@ -512,13 +517,13 @@ void AppController::updateStatus()
         up += task.upSpeed;
     }
     m_activeDownloads = active;
-    m_tray->setToolTip(active > 0 ? QStringLiteral("Miku Library · %1 个下载中 · ↓ %2").arg(active).arg(Format::speed(down))
+    m_tray->setToolTip(active > 0 ? QCoreApplication::translate("Miku", "Miku Library · %1 个下载中 · ↓ %2").arg(active).arg(Format::speed(down))
                                   : QStringLiteral("Miku Library"));
     m_engineState = builtin && !running ? QStringLiteral("err") : active > 0 ? QStringLiteral("busy") : QStringLiteral("ok");
-    if (builtin && !running) m_transfer = QStringLiteral("引擎未启动");
+    if (builtin && !running) m_transfer = QCoreApplication::translate("Miku", "引擎未启动");
     else if (down > 0 || up > 0) m_transfer = QStringLiteral("↓ %1 · ↑ %2").arg(Format::speed(down), Format::speed(up));
-    else if (active > 0) m_transfer = QStringLiteral("%1 个任务等待数据").arg(active);
-    else m_transfer = builtin ? QStringLiteral("空闲") : QStringLiteral("新任务交给外部下载器");
+    else if (active > 0) m_transfer = QCoreApplication::translate("Miku", "%1 个任务等待数据").arg(active);
+    else m_transfer = builtin ? QCoreApplication::translate("Miku", "空闲") : QCoreApplication::translate("Miku", "新任务交给外部下载器");
     emit statusChanged();
     // Keep the speeds current while anything is transferring.
     if ((active > 0 || down > 0 || up > 0) && !m_badgeTimer->isActive())
@@ -527,11 +532,11 @@ void AppController::updateStatus()
 
 void AppController::selectPage(int index)
 {
-    if (index < 0 || index >= kPageNames.size() || index == kDetailPage)
+    if (index < 0 || index >= pageNames().size() || index == kDetailPage)
         return;
     if (m_page == kDetailPage)
         m_detail->cancel();
-    m_contextTitle = kPageNames.at(index);
+    m_contextTitle = pageNames().at(index);
     m_currentNav = index;
     m_page = index;
     emit pageChanged();
@@ -550,7 +555,7 @@ void AppController::openSubjectById(int bangumiId)
     m_bangumi->getSubject(bangumiId, [this](AnimeSubject subject, QString error) {
         if (!error.isEmpty()) {
             m_pendingInput.clear();
-            m_dialogs->message(QStringLiteral("番剧查询失败"), error, QStringLiteral("warning"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "番剧查询失败"), error, QStringLiteral("warning"));
             return;
         }
         openAnime(subject);
@@ -559,7 +564,8 @@ void AppController::openSubjectById(int bangumiId)
 
 void AppController::openAnime(const AnimeSubject &subject, bool localOnly)
 {
-    m_contextTitle = QStringLiteral("番剧详情 · ") + subject.displayName();
+    m_detailName = subject.displayName();
+    m_contextTitle = detailTitle(m_detailName);
     if (m_page != kDetailPage)
         m_currentNav = m_page;
     m_page = kDetailPage;
@@ -597,7 +603,7 @@ void AppController::handleArguments(const QStringList &args)
         input = value("--add-torrent");
     if (!input.isEmpty()) {
         if (!m_pendingInput.isEmpty()) {
-            m_dialogs->message(QStringLiteral("等待选择番剧"), QStringLiteral("请先选择上一份导入资源所属的番剧。"));
+            m_dialogs->message(QCoreApplication::translate("Miku", "等待选择番剧"), QCoreApplication::translate("Miku", "请先选择上一份导入资源所属的番剧。"));
             return;
         }
         m_pendingInput = input;
@@ -618,7 +624,7 @@ void AppController::handleArguments(const QStringList &args)
         title.remove(QRegularExpression("\\[[^\\]]*\\]|【[^】]*】"));
         title.remove(QRegularExpression("\\s*(?:S\\d+E\\d+|[-–]\\s*\\d+).*$", QRegularExpression::CaseInsensitiveOption));
         searchQuery(title.trimmed());
-        m_dialogs->message(QStringLiteral("选择资源所属番剧"), QStringLiteral("请在搜索结果中选择对应番剧，随后将按当前下载器和番剧目录导入资源。"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "选择资源所属番剧"), QCoreApplication::translate("Miku", "请在搜索结果中选择对应番剧，随后将按当前下载器和番剧目录导入资源。"));
         return;
     }
     const int id = value("--subject").toInt();
@@ -631,7 +637,7 @@ void AppController::handleArguments(const QStringList &args)
 
 QString AppController::backTitle() const
 {
-    return kPageNames.value(m_currentNav, kPageNames.first());
+    return pageNames().value(m_currentNav, pageNames().first());
 }
 
 bool AppController::startedAgain()
@@ -680,10 +686,10 @@ void AppController::updateDownloader()
 
 QVariantList AppController::downloaderOptions() const
 {
-    static const QHash<QString, QString> descriptions = {
-        {"builtin", QStringLiteral("管理进度与本地视频")}, {"qbittorrent", QStringLiteral("自动传入番剧保存目录")},
-        {"transmission", QStringLiteral("在软件内确认保存位置")}, {"aria2", QStringLiteral("支持本地合集的缺集选择")},
-        {"bitcomet", QStringLiteral("静默添加种子任务")}, {"custom", QStringLiteral("选择其他程序与启动参数")}};
+    const QHash<QString, QString> descriptions = {
+        {"builtin", QCoreApplication::translate("Miku", "管理进度与本地视频")}, {"qbittorrent", QCoreApplication::translate("Miku", "自动传入番剧保存目录")},
+        {"transmission", QCoreApplication::translate("Miku", "在软件内确认保存位置")}, {"aria2", QCoreApplication::translate("Miku", "支持本地合集的缺集选择")},
+        {"bitcomet", QCoreApplication::translate("Miku", "静默添加种子任务")}, {"custom", QCoreApplication::translate("Miku", "选择其他程序与启动参数")}};
     QVariantList list;
     for (const auto &type : DownloaderSettings::types())
         list << QVariantMap{{"type", type}, {"name", DownloaderSettings::name(type)}, {"description", descriptions.value(type)},
@@ -714,7 +720,7 @@ void AppController::chooseDownloader(const QString &type)
     m_config->downloader = candidate;
     if (!m_config->save()) {
         m_config->downloader = before;
-        m_dialogs->message(QStringLiteral("切换失败"), QStringLiteral("无法保存下载器设置。"), QStringLiteral("error"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "切换失败"), QCoreApplication::translate("Miku", "无法保存下载器设置。"), QStringLiteral("error"));
         return;
     }
     updateDownloader();
@@ -722,12 +728,12 @@ void AppController::chooseDownloader(const QString &type)
 
 void AppController::importCatalog()
 {
-    const QString path = NativeDialogs::openJson(m_window, QStringLiteral("导入站点配置"));
+    const QString path = NativeDialogs::openJson(m_window, QCoreApplication::translate("Miku", "导入站点配置"));
     if (path.isEmpty())
         return;
     QString error;
     if (!m_catalog->importFrom(path, &error)) {
-        m_dialogs->message(QStringLiteral("导入失败"), error, QStringLiteral("warning"));
+        m_dialogs->message(QCoreApplication::translate("Miku", "导入失败"), error, QStringLiteral("warning"));
         return;
     }
     m_sites->refresh();
@@ -735,7 +741,7 @@ void AppController::importCatalog()
 
 void AppController::exportCatalog()
 {
-    const QString path = NativeDialogs::saveJson(m_window, QStringLiteral("导出站点配置"), QStringLiteral("anime_sites_export.json"));
+    const QString path = NativeDialogs::saveJson(m_window, QCoreApplication::translate("Miku", "导出站点配置"), QStringLiteral("anime_sites_export.json"));
     if (!path.isEmpty())
         m_catalog->save(path);
 }
@@ -749,4 +755,32 @@ void AppController::openNewVersion()
 void AppController::openDownloadFolder()
 {
     QDesktopServices::openUrl(QUrl::fromLocalFile(m_config->engine.savePath));
+}
+
+void AppController::playFiles(const QStringList &files, const QString &title)
+{
+    m_dialogs->chooseVideo(files, [this, title](const QString &file) {
+        if (m_player->open(file, title, QFileInfo(file).completeBaseName())) {
+            selectPage(kPlayerPage);
+            return;
+        }
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(file)))
+            m_dialogs->message(QCoreApplication::translate("Miku", "无法播放"), QCoreApplication::translate("Miku", "请为此视频格式设置默认播放器。"), QStringLiteral("warning"));
+    });
+}
+
+void AppController::retranslate()
+{
+    m_contextTitle = m_page == kDetailPage ? detailTitle(m_detailName) : pageNames().value(m_page, pageNames().first());
+    emit pageChanged();
+    if (m_tray)
+        m_tray->setItems(trayItems());
+    updateStatus();
+    // Lists and status lines were written in the old language; quiet reloads keep what is on screen.
+    m_home->load(true);
+    m_library->refresh();
+    m_downloads->retranslate();
+    m_sites->refresh();
+    m_settings->retranslate();
+    m_detail->retranslate();
 }

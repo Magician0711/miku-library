@@ -3,6 +3,8 @@
 
 #include "Models.h"
 
+#include <QCoreApplication>
+
 #include <QByteArray>
 #include <QRegularExpression>
 #include <QSet>
@@ -152,14 +154,14 @@ QString confidenceName(Confidence c)
 QString downloadStatusName(DownloadStatus s)
 {
     switch (s) {
-    case DownloadStatus::Downloading: return QStringLiteral("下载中");
-    case DownloadStatus::Paused: return QStringLiteral("已暂停");
-    case DownloadStatus::Seeding: return QStringLiteral("做种中");
-    case DownloadStatus::Pending: return QStringLiteral("等待中");
-    case DownloadStatus::Completed: return QStringLiteral("已完成");
-    case DownloadStatus::Error: return QStringLiteral("错误");
+    case DownloadStatus::Downloading: return QCoreApplication::translate("Miku", "下载中");
+    case DownloadStatus::Paused: return QCoreApplication::translate("Miku", "已暂停");
+    case DownloadStatus::Seeding: return QCoreApplication::translate("Miku", "做种中");
+    case DownloadStatus::Pending: return QCoreApplication::translate("Miku", "等待中");
+    case DownloadStatus::Completed: return QCoreApplication::translate("Miku", "已完成");
+    case DownloadStatus::Error: return QCoreApplication::translate("Miku", "错误");
     }
-    return QStringLiteral("等待中");
+    return QCoreApplication::translate("Miku", "等待中");
 }
 
 std::optional<QString> normalizeBtih(const QString &value)
