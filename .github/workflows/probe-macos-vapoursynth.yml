@@ -1,0 +1,64 @@
+# One-off probe: can Homebrew's libmpv run a VapourSynth + MVTools set carried inside the app?
+# Results are written as notices so they can be read without signing in.
+name: Probe macOS VapourSynth
+
+on:
+  push:
+    branches: [ci/macos-vapoursynth-probe]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Homebrew mpv
+        run: |
+          brew install mpv
+          lib="$(brew --prefix)/lib/libmpv.2.dylib"
+          echo "::notice title=deps::$(brew deps mpv | tr '\n' ' ')"
+          echo "::notice title=links::$(otool -L "$lib" | grep -i -E 'vapour|python' | tr '\n' ' ')"
+          echo "::notice title=strings::$(strings "$lib" | grep -i -E 'vsscript|vapoursynth-script|VSSCRIPT_PATH|getVSScriptAPI' | sort -u | tr '\n' ' ')"
+          echo "::notice title=mpv::$(mpv --version | head -1) | vf: $(mpv --vf=help 2>&1 | grep -i vapour | tr '\n' ' ')"
+
+      - name: Carried VapourSynth
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          url='https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.13.18%2B20261110-aarch64-apple-darwin-install_only_stripped.tar.gz'
+          curl -sfL -o python.tar.gz "$url"
+          echo '7a2384641584ab9984221fcb0fc9265df465922af71be71410529e2a9c3f0540  python.tar.gz' | shasum -a 256 -c
+          mkdir vs && tar -xzf python.tar.gz -C vs
+          py=vs/python/bin/python3
+          cat > req.txt <<'EOF'
+          vapoursynth==82 --hash=sha256:e6f0854e7de85b42426cb0889066c712455b6f1afde8d7328addfb2320bc3e80
+          vapoursynth-mvtools==29 --hash=sha256:c081fb4b367ebd44f2b56cf38e43ff146dd5f31ec31dacbf6cd8bf6560aa2478
+          EOF
+          $py -m pip install -q --no-deps --require-hashes --only-binary=:all: -r req.txt
+          site=$($py -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          echo "::notice title=layout::$(cd "$site/vapoursynth" && find . -maxdepth 2 -type f ! -name '*.py' ! -name '*.pyi' | tr '\n' ' ') | size $(du -sh vs | cut -f1)"
+          echo "::notice title=core::$($py -c 'from vapoursynth import core; print(core.core_version.release_major, hasattr(core, "mv"))' 2>&1 | tail -1)"
+          script="$(find "$site/vapoursynth" -name 'libvapoursynth-script*.dylib' | head -1)"
+          echo "::notice title=vsscript::$script | $(otool -L "$script" | tail -n +2 | tr '\n' ' ')"
+          echo "VSSCRIPT=$script" >> "$GITHUB_ENV"
+
+      - name: mpv through the carried copy
+        run: |
+          cd "$RUNNER_TEMP"
+          cat > motion.vpy <<'EOF'
+          import vapoursynth as vs
+          core = vs.core
+          clip = core.std.AssumeFPS(video_in, fpsnum=25, fpsden=1)
+          sup = core.mv.Super(clip, pel=2)
+          bvec = core.mv.Analyse(sup, isb=True)
+          fvec = core.mv.Analyse(sup, isb=False)
+          core.mv.BlockFPS(clip, sup, bvec, fvec, num=60, den=1, mode=3).set_output()
+          EOF
+          run() {
+            mpv --no-config --vo=null --ao=null --untimed --frames=120 --msg-level=all=v --vf="vapoursynth=file=$RUNNER_TEMP/motion.vpy" \
+                'av://lavfi:testsrc=size=640x360:rate=25:duration=10' > "$1.log" 2>&1
+            echo "::notice title=$1 exit $?::$(grep -i -E 'vapoursynth|vsscript|python|error|fail|fps' "$1.log" | grep -v -i 'option' | head -12 | tr '\n' ' ' | cut -c1-900)"
+          }
+          run without-path
+          VSSCRIPT_PATH="$VSSCRIPT" run with-path
+          VSSCRIPT_PATH="$VSSCRIPT" PYTHONHOME="$RUNNER_TEMP/vs/python" run with-home
