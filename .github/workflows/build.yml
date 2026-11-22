@@ -243,8 +243,18 @@ jobs:
           "$root/bin/python3" -I -c 'from vapoursynth import core; assert hasattr(core, "mv")'
           echo "Motion interpolation set: $(du -sh "$root/.." | cut -f1)"
 
+      # The download suite seeds from 127.0.0.2, which macOS does not configure by itself.
       - name: Smoke tests
-        run: bash tools/run_smoke.sh build
+        run: |
+          sudo ifconfig lo0 alias 127.0.0.2 up
+          MIKU_LIBRARY_MPV_LOG="$PWD/build/mpv.log" bash tools/run_smoke.sh build
+
+      # What mpv said about drawing, while the macOS picture is checked to be black.
+      - name: mpv log
+        if: always()
+        run: |
+          [ -f build/mpv.log ] || exit 0
+          grep -i -E 'opengl|gl_|libmpv|render|error|fail|fbo|vo/' build/mpv.log | grep -v -i 'option' | head -40 | paste -sd '|' - | fold -w 1800 | head -8 | while IFS= read -r line; do echo "::notice title=mpv::$line"; done
 
       # Qt and libtorrent go in by macdeployqt; libmpv is loaded at run time, so it and
       # everything it needs are copied in separately.

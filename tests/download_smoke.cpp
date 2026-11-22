@@ -96,12 +96,9 @@ int main(int argc, char **argv)
     seedFile.close();
 
     lt::settings_pack seedSettings;
-    // The seed on its own loopback address; macOS has only 127.0.0.1 configured.
-#ifdef Q_OS_MACOS
-    const std::string seedAddress="127.0.0.1";
-#else
+    // The seed on a loopback address of its own, so the engine does not take it for itself.
+    // macOS configures only 127.0.0.1: `sudo ifconfig lo0 alias 127.0.0.2 up` first (CI does).
     const std::string seedAddress="127.0.0.2";
-#endif
     seedSettings.set_str(lt::settings_pack::listen_interfaces,seedAddress+":0");
     seedSettings.set_str(lt::settings_pack::outgoing_interfaces,seedAddress);
     seedSettings.set_bool(lt::settings_pack::enable_dht,false);

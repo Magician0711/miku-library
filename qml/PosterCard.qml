@@ -15,7 +15,8 @@ FocusScope {
     property real decodeWidth: cardWidth
     property real coverRadius: 12
     signal clicked(int subjectId)
-    onCoverChanged: Qt.callLater(() => image.shown = image.status === Image.Ready)
+    // Deferred, so the card may be gone by then (a list recycling its delegates).
+    onCoverChanged: Qt.callLater(() => { if (image) image.shown = image.status === Image.Ready })
 
     readonly property real posterWidth: cardWidth
     property real posterHeight: Math.round(posterWidth * 1.414)

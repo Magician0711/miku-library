@@ -1221,8 +1221,9 @@ int main(int argc, char **argv)
         }
         window->resize(2400, 860);
         settle(320);
-        // Wide enough for every section only on a screen that lets the window grow so far.
-        if (window->width() >= 1900)
+        // Wide enough for every section only on a screen that lets the window grow so far;
+        // the screen decides, as macOS may report the asked-for width before it clamps it.
+        if (window->screen()->availableGeometry().width() >= 1700 && window->contentItem()->width() >= 1700)
             check(settingsPage != nullptr && settingsPage->property("overview").toBool(), "settings show every section in a wide window");
         else
             report.write("    skipped (screen too small): settings show every section in a wide window\n");
