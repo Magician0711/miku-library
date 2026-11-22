@@ -27,6 +27,8 @@ for test in DetailLibrarySmoke DirectorySmoke DownloadSmoke ExternalDownloaderSm
     echo "$test exit=$code passed=$passed failed=$failures"
     if [ -n "${GITHUB_ACTIONS:-}" ] && [ -f "$log" ]; then
         grep 'motion interpolation output' "$log" | while IFS= read -r line; do echo "::notice title=$test::$line"; done
+        skipped=$(grep 'skipped (' "$log" | sed 's/^ *skipped ([^)]*): //' | paste -sd ';' -)
+        [ -n "$skipped" ] && echo "::notice title=$test skipped::$skipped"
     fi
     if [ "$code" -ne 0 ]; then
         failed+=("$test")
@@ -37,7 +39,7 @@ for test in DetailLibrarySmoke DirectorySmoke DownloadSmoke ExternalDownloaderSm
             if [ -n "${GITHUB_ACTIONS:-}" ]; then
                 echo "::error title=$test::passed=$passed failed=$failures exit=$code"
                 echo "::error title=$test failures::$(grep ' FAIL$' "$log" | sed 's/ FAIL$//' | paste -sd ';' - | cut -c1-3000)"
-                grep -v -E ' (PASS|FAIL)$' "$log" | head -4 | while IFS= read -r line; do echo "::warning title=$test::$line"; done
+                grep -v -E ' (PASS|FAIL)$|motion interpolation output|skipped \(' "$log" | head -6 | while IFS= read -r line; do echo "::warning title=$test::$line"; done
             else
                 grep ' FAIL$' "$log" | sed 's/^/  /'
             fi

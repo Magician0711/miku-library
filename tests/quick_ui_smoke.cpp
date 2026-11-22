@@ -932,6 +932,10 @@ int main(int argc, char **argv)
                     }, 3000);
                     check(lightness() > 25, "the picture is drawn, not black");
                     check(hues(0.81) > hues(0.19) + 4, "the picture is the right way up");
+                    if (lightness() <= 25 || hues(0.81) <= hues(0.19) + 4)
+                        report.write("    picture: lightness=" + QByteArray::number(lightness()) + " hues low=" + QByteArray::number(hues(0.81))
+                                     + " high=" + QByteArray::number(hues(0.19)) + " shot=" + QByteArray::number(shot.width()) + "x" + QByteArray::number(shot.height())
+                                     + " ratio=" + QByteArray::number(ratio) + " video=" + QByteArray::number(video->width()) + "x" + QByteArray::number(video->height()) + "\n");
                 }
                 player->setUpscale(1);
                 check(player->shaderList().contains(QStringLiteral("Upscale_CNN_x2_M")), "fast upscaling loads its shaders");
@@ -1039,6 +1043,11 @@ int main(int argc, char **argv)
                         check(controls->opacity() < 0.01 && !controls->isVisible(), "the controls hide while the pointer rests");
                         check(nav->opacity() < 0.01 && rootItem->property("playerResting").toBool(), "the navigation hides with them");
                         check(window->cursor().shape() == Qt::BlankCursor, "so does the pointer");
+                        if (nav->opacity() >= 0.01 || window->cursor().shape() != Qt::BlankCursor)
+                            report.write("    resting: nav opacity=" + QByteArray::number(nav->opacity()) + " resting=" + QByteArray::number(rootItem->property("playerResting").toBool())
+                                         + " pointerOnNav=" + QByteArray::number(rootItem->property("pointerOnNav").toBool())
+                                         + " controls=" + QByteArray::number(controls->opacity()) + " cursor=" + QByteArray::number(int(window->cursor().shape()))
+                                         + " paused=" + QByteArray::number(player->paused()) + "\n");
                         QTest::mouseMove(window, middle + QPoint(30, 10));
                         settle(250);
                         check(controls->opacity() > 0.9 && nav->opacity() > 0.9 && !rootItem->property("playerResting").toBool()
@@ -1178,7 +1187,11 @@ int main(int argc, char **argv)
                     window->resize(1320, 860);
                     settle(400);
                     QObject::disconnect(wrapFrames);
-                    check(wrappedBy > 20, "a narrower window wraps the filters");
+                    // A screen narrower than the wide window (some CI machines) leaves nothing to narrow.
+                    if (window->screen()->availableGeometry().width() >= 1320)
+                        check(wrappedBy > 20, "a narrower window wraps the filters");
+                    else
+                        report.write("    skipped (screen too small): a narrower window wraps the filters\n");
                     check(pushed < 0.5, "a header gaining a line does not push the heading up");
                 }
                 controller.closeDetail();
@@ -1208,7 +1221,11 @@ int main(int argc, char **argv)
         }
         window->resize(2400, 860);
         settle(320);
-        check(settingsPage != nullptr && settingsPage->property("overview").toBool(), "settings show every section in a wide window");
+        // Wide enough for every section only on a screen that lets the window grow so far.
+        if (window->width() >= 1900)
+            check(settingsPage != nullptr && settingsPage->property("overview").toBool(), "settings show every section in a wide window");
+        else
+            report.write("    skipped (screen too small): settings show every section in a wide window\n");
         if (settingsPage) {
             // The title band loosens with the window's height, not its width.
             auto band = [&](int width, int height) {
@@ -1216,8 +1233,15 @@ int main(int argc, char **argv)
                 settle(120);
                 return settingsPage->property("band").toReal();
             };
-            const qreal shortWindow = band(1320, 620), normal = band(1320, 860), tall = band(1320, 1200), ultrawide = band(2400, 620);
-            check(shortWindow >= 76 && normal > shortWindow && tall > normal && tall <= 104, "the title band grows with the window's height");
+            const qreal shortWindow = band(1320, 620), normal = band(1320, 860);
+            const int normalHeight = window->height();
+            const qreal tall = band(1320, 1200);
+            const int tallHeight = window->height();
+            const qreal ultrawide = band(2400, 620);
+            if (normalHeight >= 860 && tallHeight > normalHeight)
+                check(shortWindow >= 76 && normal > shortWindow && tall > normal && tall <= 104, "the title band grows with the window's height");
+            else
+                report.write("    skipped (screen too small): the title band grows with the window's height\n");
             check(ultrawide == shortWindow, "a short wide window keeps the compact band");
             // Rows under the band read its height from Shell, so this also catches pages
             // compiled against an older Shell.

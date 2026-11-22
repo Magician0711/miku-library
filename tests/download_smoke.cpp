@@ -96,8 +96,14 @@ int main(int argc, char **argv)
     seedFile.close();
 
     lt::settings_pack seedSettings;
-    seedSettings.set_str(lt::settings_pack::listen_interfaces,"127.0.0.2:0");
-    seedSettings.set_str(lt::settings_pack::outgoing_interfaces,"127.0.0.2");
+    // The seed on its own loopback address; macOS has only 127.0.0.1 configured.
+#ifdef Q_OS_MACOS
+    const std::string seedAddress="127.0.0.1";
+#else
+    const std::string seedAddress="127.0.0.2";
+#endif
+    seedSettings.set_str(lt::settings_pack::listen_interfaces,seedAddress+":0");
+    seedSettings.set_str(lt::settings_pack::outgoing_interfaces,seedAddress);
     seedSettings.set_bool(lt::settings_pack::enable_dht,false);
     seedSettings.set_bool(lt::settings_pack::enable_lsd,false);
     seedSettings.set_bool(lt::settings_pack::enable_upnp,false);
@@ -287,7 +293,7 @@ int main(int argc, char **argv)
     waitUntil([&]{return engine.listTorrents().isEmpty();});
 
     const QString magnetDestination=sandbox.path()+QStringLiteral("/磁力下载");
-    const QString magnet="magnet:?xt=urn:btih:"+hash+"&dn=Local-test&x.pe=127.0.0.2:"
+    const QString magnet="magnet:?xt=urn:btih:"+hash+"&dn=Local-test&x.pe="+QString::fromStdString(seedAddress)+":"
         +QString::number(seed.listen_port());
     done=false;ok=false;
     engine.addTorrent(magnet,magnetDestination,[&](bool success,QString message){done=true;ok=success;error=message;});
@@ -431,7 +437,8 @@ int main(int argc, char **argv)
     check(firstReady&&library.items().first().resource.siteId=="working"&&library.items().first().resource.sources.size()==2,
         "failed torrent source automatically falls back to working source and creates only one transfer");
     const QString automatic=library.downloadDirectory(config.engine.savePath,subject,"Group A",1);
-    check(library.items().value(0).savePath==automatic&&readFile(automatic+"/"+fileName)==payload,
+    // The file can arrive a moment after the task is recorded.
+    check(library.items().value(0).savePath==automatic&&waitUntil([&]{return readFile(automatic+"/"+fileName)==payload;}),
         "coordinator creates anime group folder and automatically downloads");
     ResourceResult batch=one;batch.title="[Group A] Test [01-02] [1080p]";batch.infoHash=batchHash;
     batch.sources.clear();batch.seenOn.clear();
